@@ -1,0 +1,16 @@
+# Web framework + ASGI server
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+
+# Settings management (reads environment variables, validates them)
+pydantic==2.10.4
+pydantic-settings==2.7.0
+
+# Database (used from Milestone 3 onward)
+SQLAlchemy==2.0.36
+alembic==1.14.0
+psycopg[binary]==3.2.3
+
+# Testing
+pytest==8.3.4
+httpx==0.28.1

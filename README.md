@@ -14,7 +14,7 @@ maintainability → performance → UX.**
 | Frontend | Next.js 16, React 19, TypeScript, Tailwind CSS |
 | Backend | Python 3.11, FastAPI |
 | Database | PostgreSQL 16, SQLAlchemy 2, Alembic |
-| Aggregation | Plaid |
+| Aggregation | Plaid (`/transactions/sync`, cursor-based) |
 | Auth | Clerk (JWT / JWKS verification) |
 | Hosting | Vercel (web) · Railway/Render (API + database) |
 
@@ -75,6 +75,15 @@ alembic downgrade -1     # undo the last migration
 Schema design and the reasoning behind it:
 [`docs/milestone-02-database.md`](docs/milestone-02-database.md).
 
+## Syncing
+
+Transactions arrive via Plaid's cursor-based `/transactions/sync`. The engine
+is idempotent: writes are upserts against the deduplication constraints, the
+cursor advances only in the same transaction as the data it covers, and a
+sync can never overwrite a user's manual corrections. See
+[`docs/milestone-04-plaid.md`](docs/milestone-04-plaid.md) and
+`backend/app/services/sync.py`.
+
 ## Project status
 
 | Milestone | Scope | Status |
@@ -82,8 +91,8 @@ Schema design and the reasoning behind it:
 | 1 | Development environment & project skeleton | ✅ Complete |
 | 2 | Database schema & migrations | ✅ Complete |
 | 3 | Authentication & authorization | ✅ Complete |
-| 4 | Plaid integration & transaction sync | ⬜ Next |
-| 5 | Categorization, merchants, rules, tags | ⬜ |
+| 4 | Plaid integration & transaction sync | ✅ Complete |
+| 5 | Categorization, merchants, rules, tags | ⬜ Next |
 | 6 | Dashboards & analytics | ⬜ |
 | 7 | AI insights | ⬜ |
 | 8 | Deployment & hardening | ⬜ |
@@ -100,3 +109,7 @@ Schema design and the reasoning behind it:
   added without authentication.
 - Authorization failures return 404, never 403, so record existence is not
   disclosed.
+- Plaid access tokens are encrypted at rest with rotatable Fernet keys, never
+  returned by any endpoint, and never logged.
+- Webhooks are verified by ES256 signature, raw-body hash, and a five-minute
+  replay window before any payload is parsed.

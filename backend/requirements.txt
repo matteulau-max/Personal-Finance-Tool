@@ -17,6 +17,11 @@ psycopg[binary]==3.2.3
 # extra PyJWT raises a confusing "algorithm not supported" error.
 PyJWT[crypto]==2.10.1
 
+# Financial aggregation.
+# `cryptography` arrives via PyJWT[crypto] above and is also what encrypts
+# Plaid access tokens at rest (app/core/crypto.py).
+plaid-python==42.0.0
+
 # Testing
 pytest==8.3.4
 httpx==0.28.1

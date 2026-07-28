@@ -1,6 +1,8 @@
 import { UserButton } from "@clerk/nextjs";
 
-import { getAccounts, getMe } from "@/lib/api";
+import { ConnectBank } from "@/components/connect-bank";
+import { ConnectionList } from "@/components/connection-list";
+import { getAccounts, getMe, getPlaidItems } from "@/lib/api";
 import { clerkEnabled } from "@/lib/clerk";
 
 function ClerkSetupNotice() {
@@ -19,18 +21,26 @@ function ClerkSetupNotice() {
 }
 
 /**
- * The first authenticated page.
+ * Money is formatted here, at the edge, and never earlier.
  *
- * It proves the full chain works end to end:
- *
- *   browser cookie -> Clerk session -> short-lived JWT -> Authorization header
- *   -> FastAPI verifies the signature -> local user row -> scoped query
- *
- * `proxy.ts` already redirects signed-out visitors away from `/dashboard`, but
- * that is only a convenience. The data below is protected because the *API*
- * refuses to return it without a valid token -- which is true whether the
- * request came from this page or from curl.
+ * The API sends amounts as STRINGS, deliberately: JSON numbers are IEEE
+ * doubles, so parsing "1234.56" into a JavaScript number reintroduces exactly
+ * the float imprecision we went to the trouble of avoiding in PostgreSQL.
+ * Keeping the string intact until the moment of display means arithmetic
+ * never happens in a lossy type.
  */
+function formatMoney(amount: string | null, currency: string): string {
+  if (amount === null) return "—";
+
+  const value = Number(amount);
+  if (Number.isNaN(value)) return amount;
+
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency,
+  }).format(value);
+}
+
 export default async function DashboardPage() {
   // Without a provider, Clerk's components throw during prerendering and the
   // production build fails outright. Bail out before rendering any of them.
@@ -38,7 +48,24 @@ export default async function DashboardPage() {
     return <ClerkSetupNotice />;
   }
 
-  const [me, accounts] = await Promise.all([getMe(), getAccounts()]);
+  const [me, accounts, items] = await Promise.all([
+    getMe(),
+    getAccounts(),
+    getPlaidItems(),
+  ]);
+
+  const netWorth = accounts.ok
+    ? accounts.data
+        .filter((account) => account.include_in_net_worth)
+        .reduce((total, account) => {
+          const balance = Number(account.current_balance ?? "0");
+          if (Number.isNaN(balance)) return total;
+          // Credit balances are money OWED, so they subtract. Getting this
+          // backwards is one of the easiest ways to show someone a net worth
+          // that is wrong by twice their card balance.
+          return account.type === "credit" ? total - balance : total + balance;
+        }, 0)
+    : 0;
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-3xl flex-col gap-8 px-6 py-12">
@@ -49,7 +76,6 @@ export default async function DashboardPage() {
             {me.ok ? me.data.email : "Loading your profile…"}
           </p>
         </div>
-        {/* Clerk's prebuilt account menu: profile, security, sign out. */}
         <UserButton />
       </header>
 
@@ -58,6 +84,43 @@ export default async function DashboardPage() {
           {me.error}
         </p>
       )}
+
+      <section className="rounded-lg border border-zinc-200 p-5 dark:border-zinc-800">
+        <h2 className="mb-1 text-sm font-medium uppercase tracking-wide text-zinc-500">
+          Net worth
+        </h2>
+        <p className="text-3xl font-semibold tabular-nums">
+          {new Intl.NumberFormat("en-US", {
+            style: "currency",
+            currency: "USD",
+          }).format(netWorth)}
+        </p>
+        <p className="mt-1 text-xs text-zinc-500">
+          Cash and investments minus credit balances.
+        </p>
+      </section>
+
+      <section
+        aria-labelledby="connections-heading"
+        className="flex flex-col gap-4 rounded-lg border border-zinc-200 p-5 dark:border-zinc-800"
+      >
+        <h2
+          id="connections-heading"
+          className="text-sm font-medium uppercase tracking-wide text-zinc-500"
+        >
+          Connected banks
+        </h2>
+
+        {items.ok ? (
+          <ConnectionList connections={items.data} />
+        ) : (
+          <p className="text-sm text-amber-700 dark:text-amber-300">
+            {items.error}
+          </p>
+        )}
+
+        <ConnectBank />
+      </section>
 
       <section
         aria-labelledby="accounts-heading"
@@ -72,7 +135,7 @@ export default async function DashboardPage() {
 
         {accounts.ok && accounts.data.length === 0 && (
           <p className="text-sm text-zinc-600 dark:text-zinc-400">
-            No accounts yet. Connecting a bank via Plaid arrives in Milestone 4.
+            No accounts yet. Connect a bank above to import them.
           </p>
         )}
 
@@ -88,10 +151,13 @@ export default async function DashboardPage() {
                   <p className="text-xs text-zinc-500">
                     {account.subtype ?? account.type}
                     {account.mask ? ` ••${account.mask}` : ""}
+                    {account.utilization !== null
+                      ? ` · ${(Number(account.utilization) * 100).toFixed(0)}% utilized`
+                      : ""}
                   </p>
                 </div>
-                <p className="font-mono text-sm">
-                  {account.current_balance ?? "—"} {account.currency_code}
+                <p className="font-mono text-sm tabular-nums">
+                  {formatMoney(account.current_balance, account.currency_code)}
                 </p>
               </li>
             ))}

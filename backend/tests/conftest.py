@@ -30,6 +30,7 @@ next one. `join_transaction_mode="create_savepoint"` lets a test call
 our outer transaction, which is still discarded at the end.
 """
 
+import json
 import os
 import uuid
 from datetime import date, datetime, timezone
@@ -38,12 +39,13 @@ from decimal import Decimal
 import pytest
 from alembic import command
 from alembic.config import Config
+from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, delete, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
-from app.core import security
+from app.core import crypto, security
 from app.core.config import get_settings
 from app.models import (
     Account,
@@ -258,13 +260,20 @@ def _configure_auth_settings():
     """
     os.environ["CLERK_ISSUER"] = TEST_ISSUER
     os.environ["CLERK_AUTHORIZED_PARTIES"] = f'["{TEST_AUTHORIZED_PARTY}"]'
+    # A throwaway encryption key. Generated per run rather than hard-coded, so
+    # there is no chance of a key committed "just for tests" being reused in
+    # an environment that matters.
+    os.environ["ENCRYPTION_KEYS"] = json.dumps([Fernet.generate_key().decode()])
     get_settings.cache_clear()
+    crypto._cipher.cache_clear()
 
     yield
 
     os.environ.pop("CLERK_ISSUER", None)
     os.environ.pop("CLERK_AUTHORIZED_PARTIES", None)
+    os.environ.pop("ENCRYPTION_KEYS", None)
     get_settings.cache_clear()
+    crypto._cipher.cache_clear()
 
 
 @pytest.fixture(autouse=True)

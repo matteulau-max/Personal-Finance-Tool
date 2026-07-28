@@ -198,3 +198,21 @@ export function getMe(): Promise<Result<MeResponse>> {
 export function getAccounts(): Promise<Result<AccountResponse[]>> {
   return authedJson<AccountResponse[]>("/api/accounts");
 }
+
+export type PlaidItemResponse = {
+  id: string;
+  status: string;
+  institution: {
+    name: string;
+    logo_url: string | null;
+    primary_color: string | null;
+  } | null;
+  last_successful_sync_at: string | null;
+  consent_expires_at: string | null;
+  error_code: string | null;
+  created_at: string;
+};
+
+export function getPlaidItems(): Promise<Result<PlaidItemResponse[]>> {
+  return authedJson<PlaidItemResponse[]>("/api/plaid/items");
+}

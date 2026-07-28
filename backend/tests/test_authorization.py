@@ -41,6 +41,10 @@ PUBLIC_PATHS = {
     "/docs",
     "/docs/oauth2-redirect",
     "/redoc",
+    # Plaid cannot log in. This endpoint is protected by ES256 signature
+    # verification instead -- see services/plaid_webhooks.py. Listing it here
+    # is a deliberate, reviewable exception.
+    "/api/plaid/webhook",
 }
 
 

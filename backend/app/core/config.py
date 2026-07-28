@@ -61,6 +61,30 @@ class Settings(BaseSettings):
     # unreproducible "token expired" failures.
     JWT_LEEWAY_SECONDS: int = 30
 
+    # --- Encryption at rest ---
+    # Fernet keys, newest first. The first is used for new writes; the rest
+    # exist so data written under an older key still decrypts during rotation.
+    # Generate one with:
+    #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    ENCRYPTION_KEYS: list[str] = []
+
+    # --- Plaid ---
+    PLAID_CLIENT_ID: str = ""
+    PLAID_SECRET: str = ""
+    # sandbox = fake banks and test credentials, no real money, free.
+    # production = real institutions. There is no "development" tier any more.
+    PLAID_ENV: Literal["sandbox", "production"] = "sandbox"
+    PLAID_PRODUCTS: list[str] = ["transactions"]
+    PLAID_COUNTRY_CODES: list[str] = ["US"]
+    # Shown to the user inside the Plaid Link dialog.
+    PLAID_CLIENT_NAME: str = "Personal Finance Dashboard"
+    # Public HTTPS URL Plaid posts webhooks to. Empty disables webhooks, which
+    # is the normal state in local development.
+    PLAID_WEBHOOK_URL: str = ""
+    # Reject webhooks whose JWT was issued more than this long ago. Plaid
+    # recommends 5 minutes; it is what stops a captured webhook being replayed.
+    PLAID_WEBHOOK_MAX_AGE_SECONDS: int = 300
+
     @property
     def is_production(self) -> bool:
         return self.ENVIRONMENT == "production"
@@ -68,6 +92,17 @@ class Settings(BaseSettings):
     @property
     def auth_configured(self) -> bool:
         return bool(self.CLERK_ISSUER)
+
+    @property
+    def plaid_configured(self) -> bool:
+        return bool(self.PLAID_CLIENT_ID and self.PLAID_SECRET)
+
+    @property
+    def plaid_host(self) -> str:
+        return {
+            "sandbox": "https://sandbox.plaid.com",
+            "production": "https://production.plaid.com",
+        }[self.PLAID_ENV]
 
     @property
     def jwks_url(self) -> str:
@@ -94,6 +129,12 @@ class Settings(BaseSettings):
                 raise ValueError("CLERK_AUTHORIZED_PARTIES must be set in production")
             if self.DEBUG:
                 raise ValueError("DEBUG must be false in production")
+            if not self.ENCRYPTION_KEYS:
+                raise ValueError("ENCRYPTION_KEYS must be set in production")
+            if self.PLAID_ENV != "production":
+                raise ValueError("PLAID_ENV must be 'production' in production")
+            if not self.PLAID_WEBHOOK_URL.startswith("https://"):
+                raise ValueError("PLAID_WEBHOOK_URL must be an HTTPS URL in production")
         return self
 
 

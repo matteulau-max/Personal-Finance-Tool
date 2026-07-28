@@ -77,7 +77,9 @@ from app.models import (
     Transaction,
     TransactionSource,
     TransactionStatus,
+    User,
 )
+from app.services.enrichment import enrich_transactions
 from app.services.plaid_gateway import (
     PlaidAccount,
     PlaidApiError,
@@ -129,6 +131,9 @@ class SyncCounts:
     removed: int = 0
     skipped: int = 0
     accounts_updated: int = 0
+    # Counted for the sync log, so "why is everything uncategorized?" has an
+    # answer without digging through rows.
+    categorized: int = 0
 
 
 class SyncEngine:
@@ -219,6 +224,16 @@ class SyncEngine:
             )
             self._apply_removals(item, page.removed_ids, counts)
             self._reconcile_pending(item, page.added + page.modified)
+
+            # Enrich what this page touched: assign merchants, categories, and
+            # any tags the user's rules call for.
+            #
+            # Done inside the page's transaction so enrichment commits
+            # atomically with the transactions it describes. If it ran
+            # afterwards, a crash in between would leave rows imported but
+            # uncategorized, with nothing recording that they still needed
+            # work.
+            self._enrich_page(item, page.added + page.modified, counts)
 
             cursor = page.next_cursor
 
@@ -528,6 +543,38 @@ class SyncEngine:
                     reason="pending transaction replaced by its posted version",
                 )
             )
+
+    def _enrich_page(
+        self,
+        item: PlaidItem,
+        plaid_transactions: list[PlaidTransaction],
+        counts: SyncCounts,
+    ) -> None:
+        """Run the enrichment pipeline over the rows this page wrote."""
+        if not plaid_transactions:
+            return
+
+        user = self.db.get(User, item.user_id)
+        if user is None:
+            return
+
+        plaid_ids = [t.transaction_id for t in plaid_transactions]
+        rows = (
+            self.db.execute(
+                select(Transaction).where(
+                    Transaction.user_id == item.user_id,
+                    Transaction.plaid_transaction_id.in_(plaid_ids),
+                    # A transaction that has just been retired as a duplicate
+                    # pending charge needs no merchant or category.
+                    Transaction.status != TransactionStatus.REMOVED,
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+        result = enrich_transactions(self.db, user, rows)
+        counts.categorized += result.categories_assigned
 
     def _audit_change(
         self, item: PlaidItem, previous: dict, plaid_txn: PlaidTransaction

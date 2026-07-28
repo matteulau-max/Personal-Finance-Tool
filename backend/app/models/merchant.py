@@ -53,6 +53,14 @@ class Merchant(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             postgresql_nulls_not_distinct=True,
         ),
         Index("ix_merchants_normalized_name", "normalized_name"),
+        # Trigram index for merchant autocomplete. See the equivalent note in
+        # models/transaction.py.
+        Index(
+            "ix_merchants_display_name_trgm",
+            "display_name",
+            postgresql_using="gin",
+            postgresql_ops={"display_name": "gin_trgm_ops"},
+        ),
     )
 
     # NULL = global merchant shared by all users.

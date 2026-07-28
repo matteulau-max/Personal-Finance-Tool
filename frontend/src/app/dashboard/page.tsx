@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { UserButton } from "@clerk/nextjs";
 
 import { ConnectBank } from "@/components/connect-bank";
@@ -76,7 +77,12 @@ export default async function DashboardPage() {
             {me.ok ? me.data.email : "Loading your profile…"}
           </p>
         </div>
-        <UserButton />
+        <div className="flex items-center gap-4">
+          <Link href="/transactions" className="text-sm underline">
+            Transactions
+          </Link>
+          <UserButton />
+        </div>
       </header>
 
       {!me.ok && (

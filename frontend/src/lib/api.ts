@@ -216,3 +216,105 @@ export type PlaidItemResponse = {
 export function getPlaidItems(): Promise<Result<PlaidItemResponse[]>> {
   return authedJson<PlaidItemResponse[]>("/api/plaid/items");
 }
+
+// ---------------------------------------------------------------------------
+// Transactions, categories, tags (Milestone 5)
+// ---------------------------------------------------------------------------
+
+export type CategorySummary = {
+  id: string;
+  name: string;
+  slug: string | null;
+  icon: string | null;
+  color: string | null;
+  is_income: boolean;
+  is_transfer: boolean;
+};
+
+export type MerchantSummary = {
+  id: string;
+  display_name: string;
+  logo_url: string | null;
+  is_subscription: boolean;
+};
+
+export type TagSummary = { id: string; name: string; color: string | null };
+
+export type TransactionItem = {
+  id: string;
+  account_id: string;
+  status: string;
+  source: string;
+  amount: string;
+  date: string;
+  description: string;
+  currency_code: string;
+  category: CategorySummary | null;
+  merchant: MerchantSummary | null;
+  tags: TagSummary[];
+  notes: string | null;
+  is_hidden: boolean;
+  is_reviewed: boolean;
+  category_source: string;
+  is_user_modified: boolean;
+  raw_name: string;
+  raw_amount: string;
+  raw_date: string;
+  created_at: string;
+};
+
+export type TransactionPage = {
+  items: TransactionItem[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export type CategoryItem = CategorySummary & {
+  parent_id: string | null;
+  is_system: boolean;
+  sort_order: number;
+};
+
+export type TagItem = {
+  id: string;
+  name: string;
+  color: string | null;
+  description: string | null;
+  created_at: string;
+};
+
+export type TransactionFilters = {
+  search?: string;
+  categoryId?: string;
+  tagId?: string;
+  startDate?: string;
+  endDate?: string;
+  limit?: number;
+  offset?: number;
+};
+
+export function getTransactions(
+  filters: TransactionFilters = {},
+): Promise<Result<TransactionPage>> {
+  // URLSearchParams handles escaping. Building a query string by hand is how
+  // a merchant name containing "&" silently truncates the search.
+  const params = new URLSearchParams();
+  if (filters.search) params.set("search", filters.search);
+  if (filters.categoryId) params.set("category_id", filters.categoryId);
+  if (filters.tagId) params.set("tag_id", filters.tagId);
+  if (filters.startDate) params.set("start_date", filters.startDate);
+  if (filters.endDate) params.set("end_date", filters.endDate);
+  params.set("limit", String(filters.limit ?? 50));
+  params.set("offset", String(filters.offset ?? 0));
+
+  return authedJson<TransactionPage>(`/api/transactions?${params.toString()}`);
+}
+
+export function getCategories(): Promise<Result<CategoryItem[]>> {
+  return authedJson<CategoryItem[]>("/api/categories");
+}
+
+export function getTags(): Promise<Result<TagItem[]>> {
+  return authedJson<TagItem[]>("/api/tags");
+}

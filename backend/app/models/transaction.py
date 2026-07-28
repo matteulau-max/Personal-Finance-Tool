@@ -129,6 +129,19 @@ class Transaction(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_transactions_user_id_auto_merchant_id", "user_id", "auto_merchant_id"),
         # Sync needs to find pending rows quickly to reconcile them.
         Index("ix_transactions_status", "status"),
+        # Substring search ("show me anything with 'coffee' in it").
+        #
+        # A leading wildcard -- ILIKE '%coffee%' -- makes a normal B-tree
+        # index useless, so PostgreSQL would read every row. A trigram GIN
+        # index indexes three-character sequences instead, which makes
+        # substring matching indexable. Requires the pg_trgm extension,
+        # created by migration 5d94c4e6a26a.
+        Index(
+            "ix_transactions_raw_name_trgm",
+            "raw_name",
+            postgresql_using="gin",
+            postgresql_ops={"raw_name": "gin_trgm_ops"},
+        ),
     )
 
     # --- Ownership -------------------------------------------------------

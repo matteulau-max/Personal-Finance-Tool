@@ -713,3 +713,113 @@ def test_transaction_dates_survive_the_round_trip(db: Session, user: User):
 
     [txn] = transactions_for(db, user)
     assert txn.raw_date == dt.date(2028, 2, 29)
+
+
+# ---------------------------------------------------------------------------
+# Enrichment integration (Milestone 5)
+# ---------------------------------------------------------------------------
+
+
+def test_synced_transactions_are_enriched(db: Session, user: User):
+    """Sync and enrichment must be one atomic unit.
+
+    If enrichment ran afterwards, a crash in between would leave rows imported
+    but uncategorized, with nothing recording that they still needed work.
+    """
+    from sqlalchemy import select as _select
+
+    from app.models import Category
+
+    item = make_item(db, user)
+    gateway = FakePlaidGateway(
+        pages=[
+            page(
+                added=[
+                    make_txn(
+                        "txn_1",
+                        name="STARBUCKS STORE 123",
+                        category="FOOD_AND_DRINK",
+                    )
+                ]
+            )
+        ]
+    )
+
+    SyncEngine(db, gateway).sync_item(item, SyncTrigger.INITIAL)
+
+    [txn] = transactions_for(db, user)
+    assert txn.auto_merchant_id is not None
+    expected = db.execute(
+        _select(Category.id).where(Category.slug == "food_and_drink")
+    ).scalar_one()
+    assert txn.auto_category_id == expected
+
+
+def test_a_users_rule_applies_during_sync(db: Session, user: User):
+    """Rules run as data arrives, not on a later pass."""
+    from sqlalchemy import select as _select
+
+    from app.models import Category, Rule
+
+    coffee_id = db.execute(
+        _select(Category.id).where(Category.slug == "food_and_drink.coffee")
+    ).scalar_one()
+
+    db.add(
+        Rule(
+            user_id=user.id,
+            name="Starbucks is coffee",
+            conditions={
+                "conditions": [
+                    {"field": "raw_name", "op": "contains", "value": "starbucks"}
+                ]
+            },
+            actions={"set_category_id": str(coffee_id)},
+        )
+    )
+    db.flush()
+
+    item = make_item(db, user)
+    gateway = FakePlaidGateway(
+        pages=[page(added=[make_txn("txn_1", name="STARBUCKS STORE 123")])]
+    )
+
+    SyncEngine(db, gateway).sync_item(item, SyncTrigger.INITIAL)
+
+    [txn] = transactions_for(db, user)
+    assert txn.auto_category_id == coffee_id
+
+
+def test_a_resync_does_not_undo_corrections_made_since(db: Session, user: User):
+    """The end-to-end guarantee, across both engines.
+
+    Import, correct, then sync again. Enrichment runs on the re-synced row and
+    must still leave the user's category alone.
+    """
+    from sqlalchemy import select as _select
+
+    from app.models import Category
+
+    item = make_item(db, user)
+    txn_payload = make_txn("txn_1", name="STARBUCKS STORE 123")
+
+    SyncEngine(db, FakePlaidGateway(pages=[page(added=[txn_payload])])).sync_item(
+        item, SyncTrigger.INITIAL
+    )
+
+    travel_id = db.execute(
+        _select(Category.id).where(Category.slug == "travel")
+    ).scalar_one()
+
+    [txn] = transactions_for(db, user)
+    txn.user_category_id = travel_id
+    db.commit()
+
+    SyncEngine(db, FakePlaidGateway(pages=[page(modified=[txn_payload])])).sync_item(
+        item, SyncTrigger.WEBHOOK
+    )
+
+    db.expire_all()
+    [txn] = transactions_for(db, user)
+    assert txn.user_category_id == travel_id
+    assert txn.effective_category_id == travel_id

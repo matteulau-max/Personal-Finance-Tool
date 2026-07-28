@@ -342,14 +342,20 @@ def test_the_same_tag_cannot_be_applied_twice(db: Session, user: User, account: 
 
 
 def test_duplicate_tag_names_per_user_are_rejected(db: Session, user: User):
+    """Uniqueness is CASE-INSENSITIVE as of migration 5d94c4e6a26a.
+
+    "Vacation" and "vacation" collide, because a user who ends up with both
+    has two tags they believe are one -- and their vacation report silently
+    shows half their spending.
+    """
     db.add(Tag(user_id=user.id, name="Vacation"))
     db.flush()
 
-    db.add(Tag(user_id=user.id, name="Vacation"))
+    db.add(Tag(user_id=user.id, name="vacation"))
     with pytest.raises(IntegrityError) as exc_info:
         db.flush()
 
-    assert "uq_tags_user_id_name" in str(exc_info.value)
+    assert "uq_tags_user_id_lower_name" in str(exc_info.value)
 
 
 def test_deleting_a_tag_leaves_its_transactions_intact(

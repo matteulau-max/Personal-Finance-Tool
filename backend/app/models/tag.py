@@ -21,7 +21,7 @@ That table is `transaction_tags` below -- a "join table".
 import uuid
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, String, UniqueConstraint
+from sqlalchemy import ForeignKey, Index, String, text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -34,12 +34,20 @@ if TYPE_CHECKING:
 class Tag(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "tags"
     __table_args__ = (
-        # Tags belong to one user, and that user cannot have two tags with the
-        # same name. Note we store `name` as typed but uniqueness should be
-        # case-insensitive -- the service layer lowercases before comparing,
-        # and Milestone 5 adds a functional index to enforce it in the
-        # database as well.
-        UniqueConstraint("user_id", "name", name="uq_tags_user_id_name"),
+        # Uniqueness is CASE-INSENSITIVE, enforced by a functional index on
+        # lower(name). A plain unique constraint would let "Vacation" and
+        # "vacation" coexist, and the user would then have two tags they
+        # believe are one -- their vacation report silently showing half
+        # their spending.
+        #
+        # The name is stored as typed, so the user's own capitalization is
+        # preserved; only the comparison is folded.
+        Index(
+            "uq_tags_user_id_lower_name",
+            "user_id",
+            text("lower(name)"),
+            unique=True,
+        ),
     )
 
     user_id: Mapped[uuid.UUID] = mapped_column(

@@ -75,6 +75,14 @@ alembic downgrade -1     # undo the last migration
 Schema design and the reasoning behind it:
 [`docs/milestone-02-database.md`](docs/milestone-02-database.md).
 
+## Categorization
+
+Transactions are enriched as they arrive: merchants are normalized, then
+categorized by (in order) a matching rule, the merchant's default category, or
+Plaid's suggestion. Enrichment writes only `auto_*` columns, so re-running it
+across all history can never destroy a manual correction. See
+[`docs/milestone-05-categorization.md`](docs/milestone-05-categorization.md).
+
 ## Syncing
 
 Transactions arrive via Plaid's cursor-based `/transactions/sync`. The engine
@@ -92,8 +100,8 @@ sync can never overwrite a user's manual corrections. See
 | 2 | Database schema & migrations | ✅ Complete |
 | 3 | Authentication & authorization | ✅ Complete |
 | 4 | Plaid integration & transaction sync | ✅ Complete |
-| 5 | Categorization, merchants, rules, tags | ⬜ Next |
-| 6 | Dashboards & analytics | ⬜ |
+| 5 | Categorization, merchants, rules, tags | ✅ Complete |
+| 6 | Dashboards & analytics | ⬜ Next |
 | 7 | AI insights | ⬜ |
 | 8 | Deployment & hardening | ⬜ |
 

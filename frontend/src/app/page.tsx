@@ -1,4 +1,4 @@
-import { getBackendHealth } from "@/lib/api";
+import { getBackendHealth, getDatabaseHealth } from "@/lib/api";
 
 /**
  * This is a Server Component (the default in the Next.js App Router).
@@ -10,7 +10,13 @@ import { getBackendHealth } from "@/lib/api";
  * fetch data -- no useEffect, no loading spinner boilerplate.
  */
 export default async function Home() {
-  const health = await getBackendHealth();
+  // Promise.all runs both requests concurrently rather than one after the
+  // other. With two 30ms calls that is the difference between 30ms and 60ms --
+  // trivial here, but the habit matters once a page needs six of them.
+  const [health, database] = await Promise.all([
+    getBackendHealth(),
+    getDatabaseHealth(),
+  ]);
 
   return (
     <main className="mx-auto flex min-h-screen max-w-2xl flex-col justify-center gap-8 px-6 py-16">
@@ -55,6 +61,30 @@ export default async function Home() {
             </dd>
           </div>
 
+          <div className="flex items-center justify-between gap-4">
+            <dt className="text-zinc-600 dark:text-zinc-400">Database</dt>
+            <dd
+              className={
+                database.ok
+                  ? "font-medium text-green-600 dark:text-green-400"
+                  : "font-medium text-amber-600 dark:text-amber-400"
+              }
+            >
+              {database.ok ? "Connected" : "Not reachable"}
+            </dd>
+          </div>
+
+          {database.ok && (
+            <div className="flex items-center justify-between gap-4">
+              <dt className="text-zinc-600 dark:text-zinc-400">
+                Schema version
+              </dt>
+              <dd className="font-mono text-xs">
+                {database.data.migration_revision ?? "none"}
+              </dd>
+            </div>
+          )}
+
           {health.ok && (
             <div className="flex items-center justify-between gap-4">
               <dt className="text-zinc-600 dark:text-zinc-400">Environment</dt>
@@ -66,6 +96,12 @@ export default async function Home() {
         {!health.ok && (
           <p className="mt-4 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
             {health.error}
+          </p>
+        )}
+
+        {health.ok && !database.ok && (
+          <p className="mt-4 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+            {database.error}
           </p>
         )}
       </section>

@@ -17,9 +17,17 @@ export type HealthResponse = {
   environment: string;
 };
 
-export type HealthResult =
-  | { ok: true; data: HealthResponse }
-  | { ok: false; error: string };
+export type DatabaseHealthResponse = {
+  status: string;
+  database: string;
+  migration_revision: string | null;
+  detail: string | null;
+};
+
+export type Result<T> = { ok: true; data: T } | { ok: false; error: string };
+
+export type HealthResult = Result<HealthResponse>;
+export type DatabaseHealthResult = Result<DatabaseHealthResponse>;
 
 /**
  * Returns a result object instead of throwing.
@@ -41,6 +49,42 @@ export async function getBackendHealth(): Promise<HealthResult> {
     }
 
     return { ok: true, data: (await response.json()) as HealthResponse };
+  } catch {
+    return {
+      ok: false,
+      error: `Could not reach the backend at ${API_BASE_URL}. Is it running?`,
+    };
+  }
+}
+
+/**
+ * Readiness check: is the database reachable, and which migration is applied?
+ *
+ * Note this treats HTTP 503 as a *successful request reporting a problem*
+ * rather than a transport failure -- the backend answered, the database is
+ * what is down. Distinguishing the two is what lets the UI say "backend up,
+ * database down" instead of an unhelpful "something is broken".
+ */
+export async function getDatabaseHealth(): Promise<DatabaseHealthResult> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/health/db`, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(5000),
+    });
+
+    const body = (await response.json()) as DatabaseHealthResponse;
+
+    if (!response.ok) {
+      return {
+        ok: false,
+        error:
+          response.status === 503
+            ? "Backend is running but cannot reach PostgreSQL. Is `docker compose up -d` running?"
+            : `Backend responded with ${response.status}`,
+      };
+    }
+
+    return { ok: true, data: body };
   } catch {
     return {
       ok: false,

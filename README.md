@@ -41,6 +41,7 @@ cd backend
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
+alembic upgrade head          # create tables + seed categories
 uvicorn app.main:app --reload --port 8000
 
 # Frontend →  http://localhost:3000
@@ -59,13 +60,28 @@ Visit <http://localhost:3000> — the status card should report the backend as
 cd backend && source .venv/bin/activate && pytest
 ```
 
+Tests run against a real PostgreSQL database (`finance_test`, created and
+dropped automatically) and apply the real Alembic migrations, so the suite
+also verifies that the schema is deployable.
+
+## Database
+
+```bash
+alembic upgrade head     # apply migrations
+alembic current          # show the applied revision
+alembic downgrade -1     # undo the last migration
+```
+
+Schema design and the reasoning behind it:
+[`docs/milestone-02-database.md`](docs/milestone-02-database.md).
+
 ## Project status
 
 | Milestone | Scope | Status |
 |---|---|---|
 | 1 | Development environment & project skeleton | ✅ Complete |
-| 2 | Database schema & migrations | ⬜ Next |
-| 3 | Authentication | ⬜ |
+| 2 | Database schema & migrations | ✅ Complete |
+| 3 | Authentication | ⬜ Next |
 | 4 | Plaid integration & transaction sync | ⬜ |
 | 5 | Categorization, merchants, rules, tags | ⬜ |
 | 6 | Dashboards & analytics | ⬜ |

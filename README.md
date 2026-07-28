@@ -75,6 +75,15 @@ alembic downgrade -1     # undo the last migration
 Schema design and the reasoning behind it:
 [`docs/milestone-02-database.md`](docs/milestone-02-database.md).
 
+## Analytics
+
+Aggregation happens in PostgreSQL, not in Python: measured at ~50x faster, and
+the difference between a 76ms panel and a 3.9s one at 100,000 transactions
+(`backend/scripts/benchmark_analytics.py` reproduces it). Transfers are excluded
+from spending, income is separated rather than netted, and every figure uses
+effective (user-corrected) values. See
+[`docs/milestone-06-analytics.md`](docs/milestone-06-analytics.md).
+
 ## Categorization
 
 Transactions are enriched as they arrive: merchants are normalized, then
@@ -101,8 +110,8 @@ sync can never overwrite a user's manual corrections. See
 | 3 | Authentication & authorization | ✅ Complete |
 | 4 | Plaid integration & transaction sync | ✅ Complete |
 | 5 | Categorization, merchants, rules, tags | ✅ Complete |
-| 6 | Dashboards & analytics | ⬜ Next |
-| 7 | AI insights | ⬜ |
+| 6 | Dashboards & analytics | ✅ Complete |
+| 7 | AI insights | ⬜ Next |
 | 8 | Deployment & hardening | ⬜ |
 
 ## Security

@@ -78,6 +78,9 @@ export default async function DashboardPage() {
           </p>
         </div>
         <div className="flex items-center gap-4">
+          <Link href="/insights" className="text-sm underline">
+            Insights
+          </Link>
           <Link href="/transactions" className="text-sm underline">
             Transactions
           </Link>

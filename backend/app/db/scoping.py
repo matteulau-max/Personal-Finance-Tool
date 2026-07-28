@@ -48,6 +48,7 @@ from app.models import (
     Account,
     AccountBalance,
     AuditLog,
+    Budget,
     Category,
     Merchant,
     MerchantAlias,
@@ -66,6 +67,7 @@ from app.models import (
 USER_OWNED_MODELS = (
     Account,
     AuditLog,
+    Budget,
     PlaidItem,
     Rule,
     Tag,

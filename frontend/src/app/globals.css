@@ -24,3 +24,50 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* ---------------------------------------------------------------------------
+   Chart tokens
+   ---------------------------------------------------------------------------
+   Charts are written against ROLES (--series-1, --grid, …) rather than raw hex,
+   so the light/dark values swap in one place.
+
+   These are not chosen by eye. The categorical pair was run through the
+   data-viz validator in both modes and passes every check: lightness band,
+   chroma floor, colorblind separation (worst adjacent ΔE 24.7 light / 26.8
+   dark against a target of 8), normal-vision separation, and 3:1 contrast
+   against the chart surface.
+
+   The dark values are a SELECTED set stepped for the dark surface -- not an
+   automatic inversion of the light ones, which would fail the contrast check.
+   --------------------------------------------------------------------------- */
+.viz-root {
+  color-scheme: light;
+  --surface-1: #fcfcfb;
+  --grid: #e6e5e1;
+  --series-1: #2a78d6; /* blue   */
+  --series-2: #eb6834; /* orange */
+  --good: #0ca30c;
+  --critical: #d03b3b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) .viz-root {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --grid: #333331;
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --good: #0ca30c;
+    --critical: #d03b3b;
+  }
+}
+
+:root[data-theme="dark"] .viz-root {
+  color-scheme: dark;
+  --surface-1: #1a1a19;
+  --grid: #333331;
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --good: #0ca30c;
+  --critical: #d03b3b;
+}

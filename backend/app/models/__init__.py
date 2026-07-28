@@ -13,6 +13,7 @@ bookkeeping in the project that has teeth.
 from app.db.base import Base
 from app.models.account import Account, AccountBalance
 from app.models.audit_log import AuditLog
+from app.models.budget import Budget
 from app.models.category import Category
 from app.models.enums import (
     AccountType,
@@ -42,6 +43,7 @@ __all__ = [
     "AuditAction",
     "AuditActor",
     "AuditLog",
+    "Budget",
     "Category",
     "CategorySource",
     "Institution",

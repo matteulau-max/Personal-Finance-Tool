@@ -318,3 +318,99 @@ export function getCategories(): Promise<Result<CategoryItem[]>> {
 export function getTags(): Promise<Result<TagItem[]>> {
   return authedJson<TagItem[]>("/api/tags");
 }
+
+// ---------------------------------------------------------------------------
+// Analytics (Milestone 6)
+// ---------------------------------------------------------------------------
+
+export type MonthlyPoint = {
+  period_start: string;
+  spending: string;
+  income: string;
+  net: string;
+  savings_rate: string | null;
+};
+
+export type CategoryTotal = {
+  category_id: string | null;
+  category_name: string;
+  total: string;
+  transaction_count: number;
+};
+
+export type CategoryChange = CategoryTotal & { change: string };
+
+export type MerchantTotal = {
+  merchant_id: string | null;
+  merchant_name: string;
+  total: string;
+  transaction_count: number;
+  average: string;
+};
+
+export type NetWorthPoint = {
+  as_of: string;
+  assets: string;
+  liabilities: string;
+  net_worth: string;
+};
+
+export type BudgetComparison = {
+  category_id: string;
+  category_name: string;
+  budgeted: string;
+  actual: string;
+  remaining: string;
+  used_fraction: string | null;
+};
+
+export type RecurringCharge = {
+  merchant_id: string | null;
+  merchant_name: string;
+  typical_amount: string;
+  occurrences: number;
+  average_gap_days: number;
+  last_seen: string;
+};
+
+export type LargestTransaction = {
+  id: string;
+  date: string;
+  description: string;
+  amount: string;
+  category_name: string | null;
+};
+
+export type Overview = {
+  as_of: string;
+  net_worth: string;
+  liquid_balance: string;
+  credit_utilization: string | null;
+  month_to_date_spending: string;
+  month_to_date_income: string;
+  savings_rate: string | null;
+  rolling_30_day_spending: string;
+  rolling_90_day_spending: string;
+  burn_rate: string;
+  cash_runway_months: string | null;
+  monthly: MonthlyPoint[];
+  top_categories: CategoryTotal[];
+  top_merchants: MerchantTotal[];
+  largest_transactions: LargestTransaction[];
+  biggest_increases: CategoryChange[];
+  biggest_decreases: CategoryChange[];
+  net_worth_series: NetWorthPoint[];
+  recurring: RecurringCharge[];
+  budgets: BudgetComparison[];
+};
+
+/**
+ * One request for the whole dashboard.
+ *
+ * Not eight parallel requests: that would pay eight round trips, eight token
+ * verifications and eight connection checkouts to draw a single screen, and
+ * any one of them failing would leave the page half-drawn.
+ */
+export function getOverview(months = 12): Promise<Result<Overview>> {
+  return authedJson<Overview>(`/api/analytics/overview?months=${months}`);
+}

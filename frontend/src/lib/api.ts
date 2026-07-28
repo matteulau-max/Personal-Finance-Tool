@@ -9,6 +9,10 @@
  * or database password behind a NEXT_PUBLIC_ name.
  */
 
+import { auth } from "@clerk/nextjs/server";
+
+import { clerkEnabled } from "@/lib/clerk";
+
 const API_BASE_URL = process.env.API_BASE_URL ?? "http://localhost:8000";
 
 export type HealthResponse = {
@@ -91,4 +95,106 @@ export async function getDatabaseHealth(): Promise<DatabaseHealthResult> {
       error: `Could not reach the backend at ${API_BASE_URL}. Is it running?`,
     };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Authenticated requests
+// ---------------------------------------------------------------------------
+
+export type MeResponse = {
+  id: string;
+  email: string;
+  full_name: string | null;
+  default_currency: string;
+  timezone: string;
+  created_at: string;
+};
+
+export type AccountResponse = {
+  id: string;
+  name: string;
+  display_name: string;
+  mask: string | null;
+  type: string;
+  subtype: string | null;
+  currency_code: string;
+  current_balance: string | null;
+  available_balance: string | null;
+  credit_limit: string | null;
+  balance_updated_at: string | null;
+  utilization: string | null;
+  is_active: boolean;
+  is_hidden: boolean;
+  include_in_net_worth: boolean;
+};
+
+/**
+ * Call the backend as the signed-in user.
+ *
+ * WHERE THE TOKEN COMES FROM
+ * --------------------------
+ * `auth()` reads Clerk's session cookie, and `getToken()` exchanges it for a
+ * short-lived JWT. This runs on the SERVER, inside a Server Component or
+ * Server Action -- never in the browser.
+ *
+ * That matters. Clerk's session cookie is HttpOnly, meaning JavaScript in the
+ * page cannot read it. If a dependency is ever compromised and injects a
+ * script, it still cannot steal the session, because there is nothing readable
+ * to steal. Fetching the token server-side preserves that property; copying it
+ * into browser-visible state would throw it away.
+ *
+ * The token is deliberately short-lived (about a minute). `getToken()` returns
+ * a fresh one per request, so there is nothing worth caching or persisting.
+ */
+export async function authedFetch(
+  path: string,
+  init: RequestInit = {},
+): Promise<Response> {
+  if (!clerkEnabled) {
+    throw new Error("Clerk is not configured; cannot make an authenticated request.");
+  }
+
+  const { getToken } = await auth();
+  const token = await getToken();
+
+  if (!token) {
+    throw new Error("No active session.");
+  }
+
+  return fetch(`${API_BASE_URL}${path}`, {
+    ...init,
+    cache: "no-store",
+    headers: {
+      ...init.headers,
+      Authorization: `Bearer ${token}`,
+    },
+  });
+}
+
+async function authedJson<T>(path: string): Promise<Result<T>> {
+  try {
+    const response = await authedFetch(path);
+
+    if (response.status === 401) {
+      return { ok: false, error: "Your session has expired. Please sign in again." };
+    }
+    if (!response.ok) {
+      return { ok: false, error: `Request failed with ${response.status}` };
+    }
+
+    return { ok: true, data: (await response.json()) as T };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
+}
+
+export function getMe(): Promise<Result<MeResponse>> {
+  return authedJson<MeResponse>("/api/me");
+}
+
+export function getAccounts(): Promise<Result<AccountResponse[]>> {
+  return authedJson<AccountResponse[]>("/api/accounts");
 }

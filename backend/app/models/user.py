@@ -10,9 +10,10 @@ every table in the schema. This is called an anti-corruption layer: never let a
 third party's identifiers spread through your database.
 """
 
+from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, String
+from sqlalchemy import Boolean, DateTime, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -46,6 +47,13 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # month a transaction belongs to -- a purchase at 11pm on the 31st is a
     # different month depending on the timezone you ask in.
     timezone: Mapped[str] = mapped_column(String(64), default="UTC", nullable=False)
+
+    # Last authenticated request, updated at most hourly (see services/users).
+    # Useful for dormant-account cleanup and for spotting a compromised
+    # account that suddenly becomes active after months of silence.
+    last_seen_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     plaid_items: Mapped[list["PlaidItem"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"

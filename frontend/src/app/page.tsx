@@ -1,13 +1,14 @@
+import Link from "next/link";
+import { Show, SignInButton, UserButton } from "@clerk/nextjs";
+
 import { getBackendHealth, getDatabaseHealth } from "@/lib/api";
+import { clerkEnabled } from "@/lib/clerk";
 
 /**
  * This is a Server Component (the default in the Next.js App Router).
  * It runs on the server, so it can call our backend directly and can safely
  * read private environment variables. Nothing here ships to the browser
  * except the finished HTML.
- *
- * Making the function `async` and `await`-ing inside it is all it takes to
- * fetch data -- no useEffect, no loading spinner boilerplate.
  */
 export default async function Home() {
   // Promise.all runs both requests concurrently rather than one after the
@@ -25,9 +26,48 @@ export default async function Home() {
           Personal Finance Dashboard
         </h1>
         <p className="text-zinc-600 dark:text-zinc-400">
-          Milestone 1 &mdash; development environment and project skeleton.
+          Milestone 3 &mdash; authentication and authorization.
         </p>
       </header>
+
+      {clerkEnabled ? (
+        <div className="flex items-center gap-4">
+          {/*
+            `<Show>` renders its children only when the condition holds. In
+            Clerk v7 it replaces the older `<SignedIn>` / `<SignedOut>`
+            components you will see in most tutorials -- those no longer
+            exist, and importing them is a build error.
+
+            Because this resolves on the server, the correct branch is in the
+            initial HTML. There is no flash of a "Sign in" button for someone
+            who is already signed in.
+          */}
+          <Show when="signed-out">
+            <SignInButton mode="modal">
+              <button className="rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white dark:bg-zinc-100 dark:text-zinc-900">
+                Sign in
+              </button>
+            </SignInButton>
+          </Show>
+
+          <Show when="signed-in">
+            <Link
+              href="/dashboard"
+              className="rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
+            >
+              Go to dashboard
+            </Link>
+            <UserButton />
+          </Show>
+        </div>
+      ) : (
+        <p className="rounded border border-blue-300 bg-blue-50 p-3 text-sm text-blue-900 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-200">
+          Clerk is not configured yet. Add your keys to{" "}
+          <code className="font-mono">frontend/.env.local</code> to enable
+          sign-in &mdash; see{" "}
+          <code className="font-mono">docs/milestone-03-auth.md</code>.
+        </p>
+      )}
 
       <section
         className="rounded-lg border border-zinc-200 p-5 dark:border-zinc-800"
@@ -84,6 +124,21 @@ export default async function Home() {
               </dd>
             </div>
           )}
+
+          <div className="flex items-center justify-between gap-4">
+            <dt className="text-zinc-600 dark:text-zinc-400">
+              Authentication
+            </dt>
+            <dd
+              className={
+                clerkEnabled
+                  ? "font-medium text-green-600 dark:text-green-400"
+                  : "font-medium text-zinc-500"
+              }
+            >
+              {clerkEnabled ? "Clerk configured" : "Not configured"}
+            </dd>
+          </div>
 
           {health.ok && (
             <div className="flex items-center justify-between gap-4">

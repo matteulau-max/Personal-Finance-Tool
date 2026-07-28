@@ -30,6 +30,7 @@ next one. `join_transaction_mode="create_savepoint"` lets a test call
 our outer transaction, which is still discarded at the end.
 """
 
+import os
 import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
@@ -37,10 +38,12 @@ from decimal import Decimal
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, text
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, delete, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
+from app.core import security
 from app.core.config import get_settings
 from app.models import (
     Account,
@@ -49,6 +52,13 @@ from app.models import (
     PlaidItem,
     Transaction,
     User,
+)
+from tests.auth_helpers import (
+    TEST_AUTHORIZED_PARTY,
+    TEST_ISSUER,
+    KeyPair,
+    generate_key_pair,
+    make_token,
 )
 
 
@@ -224,3 +234,165 @@ def make_transaction(
 @pytest.fixture
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+# ---------------------------------------------------------------------------
+# Authentication fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="session")
+def key_pair() -> KeyPair:
+    """One RSA key pair for the whole run -- generating them is slow."""
+    return generate_key_pair()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _configure_auth_settings():
+    """Point the app at our fake Clerk instance.
+
+    `get_settings` is `lru_cache`d, so the cache must be cleared after
+    changing the environment or the old values persist for the whole run.
+    Clearing it again on teardown stops these test values leaking into
+    anything else in the same process.
+    """
+    os.environ["CLERK_ISSUER"] = TEST_ISSUER
+    os.environ["CLERK_AUTHORIZED_PARTIES"] = f'["{TEST_AUTHORIZED_PARTY}"]'
+    get_settings.cache_clear()
+
+    yield
+
+    os.environ.pop("CLERK_ISSUER", None)
+    os.environ.pop("CLERK_AUTHORIZED_PARTIES", None)
+    get_settings.cache_clear()
+
+
+@pytest.fixture(autouse=True)
+def _stub_jwks(monkeypatch, key_pair: KeyPair):
+    """Serve our test public key instead of fetching Clerk's JWKS.
+
+    This is the ONLY thing stubbed. Signature checking, expiry, issuer,
+    algorithm pinning and the azp check all execute for real against tokens
+    we minted -- so these tests exercise the actual verification logic rather
+    than a mock of it.
+    """
+
+    class _StubKey:
+        def __init__(self, key):
+            self.key = key
+
+    class _StubJWKSClient:
+        def get_signing_key_from_jwt(self, token: str):
+            return _StubKey(key_pair.public_key)
+
+    monkeypatch.setattr(security, "_jwks_client", lambda: _StubJWKSClient())
+
+
+@pytest.fixture
+def client(db: Session) -> TestClient:
+    """A TestClient wired to the transactional test session.
+
+    Without the override, endpoints would open their own session against the
+    development database -- so test writes would escape the rollback and
+    leak into your real data.
+    """
+    from app.db.session import get_db
+    from app.main import app
+
+    app.dependency_overrides[get_db] = lambda: db
+    test_client = TestClient(app)
+
+    yield test_client
+
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def committing_client(engine):
+    """A client whose writes REALLY commit, plus cleanup afterwards.
+
+    The normal `client` fixture shares one rolled-back transaction with the
+    test, which is fast and isolated -- but it cannot distinguish "flushed"
+    from "committed", because both are visible inside the same transaction.
+    That blind spot hides a whole class of bug where data appears to save and
+    then silently vanishes.
+
+    This fixture gives each request its own real session so a test can open a
+    *separate* connection afterwards and check what actually survived. Use it
+    sparingly: it is slower, and rows must be cleaned up by hand.
+    """
+    from app.db.session import get_db
+    from app.main import app
+
+    def _real_session():
+        session = Session(bind=engine)
+        try:
+            yield session
+        finally:
+            session.close()
+
+    app.dependency_overrides[get_db] = _real_session
+    test_client = TestClient(app)
+
+    yield test_client
+
+    app.dependency_overrides.clear()
+
+    with Session(bind=engine) as cleanup:
+        cleanup.execute(
+            delete(User).where(User.clerk_user_id.like("persist_test_%"))
+        )
+        cleanup.commit()
+
+
+@pytest.fixture
+def authenticated_user(db: Session, key_pair: KeyPair) -> tuple[User, str]:
+    """An existing user plus a valid token for them.
+
+    Returns the pair because almost every authorization test needs both: the
+    token to make the request, and the row to attach fixture data to.
+    """
+    subject = f"user_{uuid.uuid4().hex[:16]}"
+    user = User(
+        clerk_user_id=subject,
+        email=f"{subject}@example.com",
+        full_name="Primary User",
+    )
+    db.add(user)
+    db.flush()
+
+    return user, make_token(key_pair, subject=subject, email=user.email)
+
+
+@pytest.fixture
+def other_user(db: Session, key_pair: KeyPair) -> tuple[User, str]:
+    """A SECOND user, for proving one cannot see the other's data.
+
+    Most cross-tenant leaks survive because the test suite only ever has one
+    user in it -- with a single user, a missing WHERE clause returns exactly
+    the right answer. This fixture is what makes that bug detectable.
+    """
+    subject = f"user_{uuid.uuid4().hex[:16]}"
+    user = User(
+        clerk_user_id=subject,
+        email=f"{subject}@example.com",
+        full_name="Other User",
+    )
+    db.add(user)
+    db.flush()
+
+    return user, make_token(key_pair, subject=subject, email=user.email)
+
+
+def make_account(db: Session, user: User, name: str = "Checking") -> Account:
+    account = Account(
+        user_id=user.id,
+        plaid_account_id=f"acct_{uuid.uuid4().hex[:12]}",
+        name=name,
+        type=AccountType.DEPOSITORY,
+        subtype="checking",
+        current_balance=Decimal("500.00"),
+    )
+    db.add(account)
+    db.flush()
+    return account

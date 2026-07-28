@@ -15,7 +15,7 @@ maintainability → performance → UX.**
 | Backend | Python 3.11, FastAPI |
 | Database | PostgreSQL 16, SQLAlchemy 2, Alembic |
 | Aggregation | Plaid |
-| Auth | Clerk *(planned)* |
+| Auth | Clerk (JWT / JWKS verification) |
 | Hosting | Vercel (web) · Railway/Render (API + database) |
 
 ## Repository layout
@@ -81,8 +81,8 @@ Schema design and the reasoning behind it:
 |---|---|---|
 | 1 | Development environment & project skeleton | ✅ Complete |
 | 2 | Database schema & migrations | ✅ Complete |
-| 3 | Authentication | ⬜ Next |
-| 4 | Plaid integration & transaction sync | ⬜ |
+| 3 | Authentication & authorization | ✅ Complete |
+| 4 | Plaid integration & transaction sync | ⬜ Next |
 | 5 | Categorization, merchants, rules, tags | ⬜ |
 | 6 | Dashboards & analytics | ⬜ |
 | 7 | AI insights | ⬜ |
@@ -93,5 +93,10 @@ Schema design and the reasoning behind it:
 - No secrets in source control. `.env` is git-ignored; `.env.example` documents
   required variables with placeholder values only.
 - CORS is restricted to a single explicit origin — never `*`.
-- Every request is authenticated and scoped to its owning user *(from
-  Milestone 3)*.
+- Every request carries a Clerk-issued JWT, verified against Clerk's JWKS on
+  signature, algorithm, expiry, issuer, and authorized party.
+- Queries against user-owned tables go through `scoped_select()`, which cannot
+  be called without a user. A guard test fails the build if any endpoint is
+  added without authentication.
+- Authorization failures return 404, never 403, so record existence is not
+  disclosed.

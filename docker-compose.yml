@@ -1,0 +1,35 @@
+# Local development database.
+#
+# Why Docker? Installing PostgreSQL directly on your machine works, but it is
+# fiddly to uninstall and easy to end up on a different version than
+# production. Docker gives you a disposable, exactly-versioned database that
+# you can delete and recreate in seconds.
+#
+#   Start it:   docker compose up -d
+#   Stop it:    docker compose down
+#   Wipe it:    docker compose down -v      (deletes ALL local data)
+#   Logs:       docker compose logs -f postgres
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: finance-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: finance
+      POSTGRES_PASSWORD: finance
+      POSTGRES_DB: finance
+    ports:
+      # host:container -- your app connects to localhost:5432
+      - "5432:5432"
+    volumes:
+      # Named volume: data survives `down`, is destroyed by `down -v`.
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U finance -d finance"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres-data:

@@ -1,0 +1,32 @@
+# Web framework + ASGI server
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+
+# Settings management (reads environment variables, validates them)
+pydantic==2.10.4
+pydantic-settings==2.7.0
+
+# Database (used from Milestone 3 onward)
+SQLAlchemy==2.0.36
+alembic==1.14.0
+psycopg[binary]==3.2.3
+
+# Authentication.
+# The [crypto] extra pulls in `cryptography`, which is required to verify
+# RS256 signatures -- Clerk signs session tokens with RSA, and without this
+# extra PyJWT raises a confusing "algorithm not supported" error.
+PyJWT[crypto]==2.10.1
+
+# Financial aggregation.
+# `cryptography` arrives via PyJWT[crypto] above and is also what encrypts
+# Plaid access tokens at rest (app/core/crypto.py).
+plaid-python==42.0.0
+
+# AI insights.
+# The official Anthropic SDK. Imported lazily inside app/services/ai_gateway.py
+# so a deployment that leaves ANTHROPIC_API_KEY unset never loads it.
+anthropic==0.120.2
+
+# Testing
+pytest==8.3.4
+httpx==0.28.1

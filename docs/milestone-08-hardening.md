@@ -524,7 +524,7 @@ that is not this repository and not the same account as the database.
 
 Not assumed:
 
-* **425 tests pass** (413 before the hardening tests; 288 at Milestone 6).
+* **427 tests pass** (288 at Milestone 6).
 * The RLS tests deliberately write the unscoped query — `select(Transaction)`
   with no WHERE clause — and assert the database refuses to leak. If RLS were
   quietly disabled, or one table's policy were missing, these fail and nothing
@@ -538,6 +538,36 @@ Not assumed:
   development database. The logging gap was found this way.
 * The queue tests drive claim/run/fail/retry directly rather than waiting on a
   poller, so nothing here depends on timing.
+* The migrations were run **down as well as up**, against a throwaway
+  database: `head -> ff5166b6ed4c -> head -> base`. That is now a test.
+* The frontend still typechecks, lints and builds (7/7 pages).
+
+### A downgrade that did not work
+
+I wrote three downgrades this milestone and, in this document, an argument
+that "a downgrade that does not exist is a change nobody can back out of at
+3am". Running one showed the partitioning downgrade failed:
+
+```
+psycopg.errors.DuplicateTable: relation "pk_audit_log" already exists
+```
+
+Renaming a table does not rename its indexes, and index names share one
+namespace across the schema -- so `pk_audit_log` was still taken when the
+replacement table tried to declare it. `upgrade()` handles this and
+`downgrade()` did not, which is the worse way round: a broken upgrade fails
+in staging, a broken downgrade fails while somebody is backing out of a bad
+deploy.
+
+Fixed, and `tests/test_migrations.py` now runs the round trip on every suite
+run, for six seconds. Writing the assertion out loud is what made me test it.
+
+### Not verified here
+
+The container image has **not been built**. There is no Docker daemon in the
+environment this was developed in, so the Dockerfile is reviewed and
+reasoned about but unproven -- treat the first `docker build` as part of
+deploying, not as a formality.
 
 ## What is still not done
 
@@ -559,3 +589,4 @@ Stated because a hardening milestone that claims completeness is lying:
 * **No metrics or tracing.** The logs are now readable; there is no dashboard
   and no alert wired to `default_partition_row_count()`, which section 4 says
   should be alerted on.
+* **The container image is unbuilt**, for the reason above.

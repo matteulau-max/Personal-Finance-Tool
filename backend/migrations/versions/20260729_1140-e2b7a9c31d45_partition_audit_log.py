@@ -198,6 +198,24 @@ def downgrade() -> None:
     """
     op.execute("ALTER TABLE audit_log RENAME TO audit_log_partitioned")
 
+    # Renaming a table does not rename its indexes, and index names share one
+    # namespace across the schema -- so `pk_audit_log` is still taken and
+    # creating the replacement table below fails with "relation
+    # \"pk_audit_log\" already exists".
+    #
+    # `upgrade()` does the same three renames for the same reason. Getting it
+    # wrong here rather than there is worse: an upgrade fails in staging,
+    # while a downgrade fails at the moment somebody is trying to back out of
+    # a bad deploy.
+    op.execute("ALTER INDEX pk_audit_log RENAME TO pk_audit_log_partitioned")
+    op.execute(
+        "ALTER INDEX ix_audit_log_entity_type_entity_id "
+        "RENAME TO ix_audit_log_part_entity"
+    )
+    op.execute(
+        "ALTER INDEX ix_audit_log_user_id_created_at RENAME TO ix_audit_log_part_user"
+    )
+
     op.execute(
         """
         CREATE TABLE audit_log (

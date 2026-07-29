@@ -20,6 +20,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.core.security import AuthError, TokenClaims, verify_token
+from app.db import rls
 from app.db.session import get_db
 from app.models import User
 from app.services.users import get_or_create_user
@@ -70,6 +71,20 @@ def get_current_user(
 ) -> User:
     """The verified, provisioned user behind this request."""
     user = get_or_create_user(db, claims)
+
+    # Everything from here on runs under Row-Level Security as this user.
+    #
+    # This line, and not the endpoint, is where it belongs. Provisioning has
+    # to run first -- looking a user up by their Clerk id, or creating them,
+    # is a query that by definition cannot be filtered to a user we have not
+    # identified yet. Once we know who they are, the database is told, and
+    # every query the request makes afterwards is filtered whether or not the
+    # code that wrote it remembered to scope it.
+    #
+    # It also means the protection follows the same rule as authentication:
+    # an endpoint declaring `CurrentUser` gets it, and an endpoint that does
+    # not declare it never receives a user to leak data to.
+    rls.activate(db, user.id)
 
     if not user.is_active:
         # Deactivated accounts get 403, not 401: the credentials were valid,

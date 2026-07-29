@@ -30,11 +30,16 @@ Combined with the route guard test in `tests/test_authorization.py`, which
 fails if any endpoint lacks an authentication dependency, this gives two
 independent layers of protection.
 
-**This is not the last word.** Defense in depth means not relying on
-developers remembering things. Milestone 8 adds PostgreSQL Row-Level
-Security, so the database itself refuses to return another user's rows even
-if application code asks for them. That is the real belt-and-braces answer;
-this is the belt.
+**This is not the last word, and as of Milestone 8 it is no longer alone.**
+Defense in depth means not relying on developers remembering things, so
+PostgreSQL Row-Level Security now refuses to return another user's rows even
+when application code asks for them -- see `app/db/rls.py`. This file is the
+belt; that one is the braces.
+
+Both are worth having. RLS is the guarantee, but it is invisible in the code:
+a reader of an endpoint cannot see it, and a query that returns nothing
+because the context was not set is harder to diagnose than one that never
+compiled. `scoped_select()` keeps the intent legible at the call site.
 """
 
 from __future__ import annotations

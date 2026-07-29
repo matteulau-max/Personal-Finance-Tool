@@ -1,0 +1,20 @@
+# Keep secrets and local state out of the image.
+#
+# `.env` is the important line. Copying it into an image bakes production
+# credentials into a layer that anyone who can pull the image can read --
+# including after the file is "deleted" in a later layer, because layers are
+# additive and nothing is ever really removed.
+.env
+.env.*
+!.env.example
+
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+.git/
+.gitignore

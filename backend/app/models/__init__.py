@@ -20,6 +20,7 @@ from app.models.enums import (
     AuditAction,
     AuditActor,
     CategorySource,
+    JobStatus,
     PlaidItemStatus,
     SyncStatus,
     SyncTrigger,
@@ -34,6 +35,7 @@ from app.models.sync_history import SyncHistory
 from app.models.tag import Tag, TransactionTag
 from app.models.transaction import Transaction
 from app.models.user import User
+from app.models.webhook_job import WebhookJob
 
 __all__ = [
     "Base",
@@ -47,6 +49,7 @@ __all__ = [
     "Category",
     "CategorySource",
     "Institution",
+    "JobStatus",
     "Merchant",
     "MerchantAlias",
     "PlaidItem",
@@ -61,4 +64,5 @@ __all__ = [
     "TransactionStatus",
     "TransactionTag",
     "User",
+    "WebhookJob",
 ]

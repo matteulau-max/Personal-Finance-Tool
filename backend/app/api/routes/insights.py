@@ -8,6 +8,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.api.deps import CurrentUser, DbSession
+from app.core.rate_limit import RateLimitedInsightsUser
 from app.schemas.insights import (
     InsightResponse,
     QuestionRequest,
@@ -41,7 +42,10 @@ def suggestions(current_user: CurrentUser) -> list[SuggestionResponse]:
 @router.post("", response_model=InsightResponse)
 def ask(
     payload: QuestionRequest,
-    current_user: CurrentUser,
+    # `RateLimitedInsightsUser` authenticates *and* meters. Declaring the
+    # limit as the thing that produces the user means it cannot be dropped
+    # while the endpoint still works -- remove it and there is no user.
+    current_user: RateLimitedInsightsUser,
     db: DbSession,
     gateway: Gateway,
 ) -> InsightResponse:
@@ -50,6 +54,8 @@ def ask(
     Note the failure modes, because they are the design. This endpoint would
     rather return an error than an answer it cannot substantiate:
 
+    * 429 -- too many questions. This is the only endpoint here that spends
+      money per call, so the limit is on the request rather than on the reply.
     * 503 -- the feature is not configured. Raised by the gateway dependency
       before this body runs, so no request is made and nothing is charged.
       Not a fallback answer.

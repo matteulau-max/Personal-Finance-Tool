@@ -144,3 +144,18 @@ class AuditActor(str, enum.Enum):
     SYNC = "sync"
     RULE = "rule"
     SYSTEM = "system"
+
+
+class JobStatus(str, enum.Enum):
+    """Lifecycle of a queued background job.
+
+    RUNNING is a real state rather than an inference from "claimed but not
+    finished": a worker killed mid-job leaves a row that says so, which is
+    what lets a later worker tell "in progress" from "abandoned" by looking
+    at how long it has been that way.
+    """
+
+    PENDING = "pending"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"

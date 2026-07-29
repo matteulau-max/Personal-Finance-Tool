@@ -264,6 +264,11 @@ def _configure_auth_settings():
     # there is no chance of a key committed "just for tests" being reused in
     # an environment that matters.
     os.environ["ENCRYPTION_KEYS"] = json.dumps([Fernet.generate_key().decode()])
+    # No background worker during tests. The queue is driven explicitly in
+    # `tests/test_job_queue.py`, which is the only way to assert on what a
+    # worker did; a poller running alongside would race those assertions and
+    # fail them occasionally, which is worse than not testing it at all.
+    os.environ["WEBHOOK_WORKER_ENABLED"] = "false"
     get_settings.cache_clear()
     crypto._cipher.cache_clear()
 
@@ -272,6 +277,7 @@ def _configure_auth_settings():
     os.environ.pop("CLERK_ISSUER", None)
     os.environ.pop("CLERK_AUTHORIZED_PARTIES", None)
     os.environ.pop("ENCRYPTION_KEYS", None)
+    os.environ.pop("WEBHOOK_WORKER_ENABLED", None)
     get_settings.cache_clear()
     crypto._cipher.cache_clear()
 
@@ -297,6 +303,25 @@ def _stub_jwks(monkeypatch, key_pair: KeyPair):
     monkeypatch.setattr(security, "_jwks_client", lambda: _StubJWKSClient())
 
 
+@pytest.fixture(autouse=True)
+def _reset_rate_limiters():
+    """Give every test a full bucket.
+
+    The limiters are module-level singletons, which is what makes them work
+    across requests -- and what would otherwise let one test's traffic fail
+    the next test with a 429. Clearing between tests keeps them independent;
+    `tests/test_rate_limit.py` deliberately exhausts a bucket and relies on
+    this to clean up after itself.
+    """
+    from app.core.rate_limit import ALL_LIMITERS
+
+    for limiter in ALL_LIMITERS:
+        limiter.reset()
+    yield
+    for limiter in ALL_LIMITERS:
+        limiter.reset()
+
+
 @pytest.fixture
 def client(db: Session) -> TestClient:
     """A TestClient wired to the transactional test session.
@@ -305,10 +330,25 @@ def client(db: Session) -> TestClient:
     development database -- so test writes would escape the rollback and
     leak into your real data.
     """
+    from app.db import rls
     from app.db.session import get_db
     from app.main import app
 
-    app.dependency_overrides[get_db] = lambda: db
+    def _shared_session():
+        """Yield the test's session, and clear RLS state on the way out.
+
+        The override replaces `get_db` wholesale, so the real one's cleanup
+        never runs. Without this, a request would leave the connection stuck
+        as `finance_app` with a user identity set, and the *test's own* asserts
+        afterwards would silently run under Row-Level Security -- turning
+        "the fixture data is missing" into a mystery.
+        """
+        try:
+            yield db
+        finally:
+            rls.deactivate(db)
+
+    app.dependency_overrides[get_db] = _shared_session
     test_client = TestClient(app)
 
     yield test_client
@@ -334,10 +374,15 @@ def committing_client(engine):
     from app.main import app
 
     def _real_session():
+        from app.db import rls
+
         session = Session(bind=engine)
         try:
             yield session
         finally:
+            session.rollback()
+            rls.deactivate(session)
+            session.commit()
             session.close()
 
     app.dependency_overrides[get_db] = _real_session

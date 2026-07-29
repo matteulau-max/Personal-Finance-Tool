@@ -111,6 +111,32 @@ sync can never overwrite a user's manual corrections. See
 [`docs/milestone-04-plaid.md`](docs/milestone-04-plaid.md) and
 `backend/app/services/sync.py`.
 
+## Hardening
+
+The database enforces user isolation itself: every table holding user data
+carries a PostgreSQL Row-Level Security policy, and each request switches into
+an unprivileged role and declares whose data it is. An unscoped
+`select(Transaction)` returns your own rows; a request with no identity returns
+none. Plaid webhooks are queued rather than synced inline, so the endpoint
+answers in milliseconds and a failed sync retries with backoff instead of
+being redelivered forever. The audit log is partitioned by month. See
+[`docs/milestone-08-hardening.md`](docs/milestone-08-hardening.md).
+
+## Deployment
+
+`backend/Dockerfile` builds the API image: multi-stage so no compiler ships in
+the runtime layer, and running as an unprivileged user. Two processes are
+possible from the same image — the API, and `python scripts/run_worker.py` if
+you would rather the webhook queue drained somewhere other than the request
+path (`WEBHOOK_WORKER_ENABLED=false` on the API in that case).
+
+One step the code cannot take for itself: in production, connect as a login
+role that is a *member* of `finance_app` and owns no tables. PostgreSQL exempts
+a table's owner from its own policies, so connecting as the migration role
+would leave Row-Level Security switched on and doing nothing. The reasoning
+and the SQL are in
+[`docs/milestone-08-hardening.md`](docs/milestone-08-hardening.md).
+
 ## Project status
 
 | Milestone | Scope | Status |
@@ -122,7 +148,7 @@ sync can never overwrite a user's manual corrections. See
 | 5 | Categorization, merchants, rules, tags | ✅ Complete |
 | 6 | Dashboards & analytics | ✅ Complete |
 | 7 | AI insights | ✅ Complete |
-| 8 | Deployment & hardening | ⬜ Next |
+| 8 | Deployment & hardening | ✅ Complete |
 
 ## Security
 
@@ -143,3 +169,15 @@ sync can never overwrite a user's manual corrections. See
 - The AI layer is read-only and bound to one user: no tool writes, and no tool
   schema accepts a user id, so there is no argument a prompt injection could
   set to reach another person's data.
+- PostgreSQL Row-Level Security backs up application-level scoping. Policies
+  cover every table with user data, requests run as a role that owns nothing
+  and bypasses nothing, and a missing identity yields no rows rather than
+  everyone's. Guard tests fail the build if a new table has neither a policy
+  nor an explicit exemption.
+- `/api/insights` — the one endpoint where a request costs real money — is
+  rate limited per user, as are syncing and Plaid link-token creation. The
+  public webhook is limited by address.
+- Responses carry `nosniff`, `no-referrer`, `DENY` and `no-store`; production
+  adds HSTS, disables the interactive docs, and checks the `Host` header.
+- Production refuses to start without a host allowlist, an HTTPS frontend
+  origin, encryption keys, Clerk configuration, or with `DEBUG=true`.

@@ -37,11 +37,15 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy import select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentUser, DbSession
-from app.core.config import get_settings
 from app.core.crypto import decrypt
+from app.core.rate_limit import (
+    RateLimitedLinkUser,
+    RateLimitedSyncUser,
+    WebhookRateLimit,
+)
 from app.db.scoping import scoped_get, scoped_select
 from app.models import PlaidItem, PlaidItemStatus, SyncHistory, SyncTrigger
 from app.schemas.plaid import (
@@ -56,8 +60,8 @@ from app.services.plaid_gateway import (
     PlaidGateway,
     get_plaid_gateway,
 )
+from app.services.job_queue import enqueue_webhook
 from app.services.plaid_webhooks import (
-    SYNC_TRIGGERING_CODES,
     WebhookVerificationError,
     parse_webhook,
     verify_webhook,
@@ -100,7 +104,9 @@ def _plaid_error_to_http(exc: PlaidApiError) -> HTTPException:
 
 
 @router.post("/link-token", response_model=LinkTokenResponse)
-def create_link_token(current_user: CurrentUser, gateway: Gateway) -> LinkTokenResponse:
+def create_link_token(
+    current_user: RateLimitedLinkUser, gateway: Gateway
+) -> LinkTokenResponse:
     """Mint a Link token to open Plaid's bank-picker in the browser.
 
     We pass OUR user id as Plaid's `client_user_id` -- never an email or a
@@ -172,7 +178,7 @@ def list_items(current_user: CurrentUser, db: DbSession) -> list[PlaidItemRespon
 @router.post("/items/{item_id}/sync", response_model=SyncRunResponse)
 def sync_item(
     item_id: uuid.UUID,
-    current_user: CurrentUser,
+    current_user: RateLimitedSyncUser,
     db: DbSession,
     gateway: Gateway,
 ) -> SyncRunResponse:
@@ -281,7 +287,15 @@ def disconnect_item(
 # ---------------------------------------------------------------------------
 
 
-@router.post("/webhook", response_model=WebhookAck, include_in_schema=False)
+@router.post(
+    "/webhook",
+    response_model=WebhookAck,
+    include_in_schema=False,
+    # Keyed by IP, because there is no user here to key on. The signature
+    # check below is the real gate; this stops an unsigned flood from costing
+    # us a signature verification each.
+    dependencies=[WebhookRateLimit],
+)
 async def plaid_webhook(
     request: Request,
     db: DbSession,
@@ -323,41 +337,18 @@ async def plaid_webhook(
     event = parse_webhook(payload)
     logger.info("Plaid webhook %s/%s", event.webhook_type, event.webhook_code)
 
-    if event.item_id:
-        _handle_item_event(db, gateway, event)
+    # Write it down, commit, answer. Nothing slow happens on this thread.
+    #
+    # Doing the sync here instead -- which is what this endpoint used to do --
+    # meant a 90-day backfill running inside Plaid's request timeout. Plaid
+    # gives up, retries, and a second sync of the same item starts while the
+    # first is still going. The sync engine's idempotency kept that from
+    # corrupting anything, but it was three times the work and an endpoint
+    # Plaid considered broken.
+    enqueue_webhook(db, event)
+    db.commit()
 
     # Always 200 once verified. Plaid retries on a non-2xx, so returning an
     # error for an event we simply do not handle would cause it to be
     # redelivered forever.
     return WebhookAck()
-
-
-def _handle_item_event(db: Session, gateway: PlaidGateway, event) -> None:
-    item = db.execute(
-        select(PlaidItem).where(PlaidItem.plaid_item_id == event.item_id)
-    ).scalar_one_or_none()
-
-    if item is None:
-        # Not ours, or already disconnected. Nothing to do, and nothing to
-        # complain about -- Plaid can legitimately send a trailing webhook
-        # after removal.
-        logger.info("Webhook for unknown item %s", event.item_id)
-        return
-
-    if event.webhook_type == "ITEM" and event.error_code:
-        item.status = (
-            PlaidItemStatus.LOGIN_REQUIRED
-            if event.error_code == "ITEM_LOGIN_REQUIRED"
-            else PlaidItemStatus.ERROR
-        )
-        item.error_code = event.error_code
-        db.commit()
-        return
-
-    if event.webhook_code in SYNC_TRIGGERING_CODES:
-        # Synchronous for now, which is fine at one user. Milestone 8 moves
-        # this to a background queue: a webhook handler that does slow work
-        # inline will eventually time out, and Plaid will retry, and you get
-        # two syncs running at once. Idempotency is what makes that survivable
-        # in the meantime.
-        SyncEngine(db, gateway).sync_item(item, SyncTrigger.WEBHOOK)

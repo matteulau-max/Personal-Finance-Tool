@@ -120,7 +120,13 @@ def test_audit_log_survives_the_deletion_of_its_user(db: Session, user: User):
     db.flush()
     db.expire_all()
 
-    surviving = db.get(AuditLog, entry_id)
+    # Fetched by id rather than with `db.get`: since Milestone 8 the audit
+    # log is partitioned by month, and a partitioned table's primary key must
+    # include the partition key -- so the key is (created_at, id) and `get`
+    # would need both halves.
+    surviving = db.execute(
+        select(AuditLog).where(AuditLog.id == entry_id)
+    ).scalar_one_or_none()
     assert surviving is not None
     assert surviving.user_id is None  # the link is cleared, the record remains
     assert surviving.reason == "manual recategorization"
@@ -141,7 +147,9 @@ def test_audit_log_records_a_before_and_after_diff(db: Session, user: User):
     db.flush()
     db.expire_all()
 
-    reloaded = db.get(AuditLog, entry.id)
+    reloaded = db.execute(
+        select(AuditLog).where(AuditLog.id == entry.id)
+    ).scalar_one()
     assert reloaded.before_values["raw_amount"] == "4.50"
     assert reloaded.after_values["status"] == "posted"
 

@@ -31,13 +31,27 @@ class Settings(BaseSettings):
     APP_NAME: str = "Personal Finance API"
     ENVIRONMENT: Literal["local", "staging", "production"] = "local"
     DEBUG: bool = True
+    # Root log level. Application loggers are wired up at startup -- see
+    # app/core/logging.py for why that is not automatic under uvicorn.
+    LOG_LEVEL: str = "INFO"
 
     # --- CORS: which frontend origins may call this API ---
     # In production this becomes your real Vercel domain, nothing else.
     FRONTEND_ORIGIN: str = "http://localhost:3000"
 
+    # Host names this API answers to, checked against the Host header in
+    # production. Empty means no check -- fine locally, refused at startup in
+    # production by the validator below.
+    ALLOWED_HOSTS: list[str] = []
+
     # --- Database ---
     DATABASE_URL: str = "postgresql+psycopg://finance:finance@localhost:5432/finance"
+
+    # The role every request switches into, and the one Row-Level Security
+    # policies actually apply to. It must own no tables and hold no BYPASSRLS
+    # -- PostgreSQL exempts both from policies. Created by the migration that
+    # adds RLS; see app/db/rls.py.
+    DB_APP_ROLE: str = "finance_app"
 
     # --- Authentication (Clerk) ---
     # The issuer identifies your Clerk instance, e.g.
@@ -84,6 +98,14 @@ class Settings(BaseSettings):
     # Reject webhooks whose JWT was issued more than this long ago. Plaid
     # recommends 5 minutes; it is what stops a captured webhook being replayed.
     PLAID_WEBHOOK_MAX_AGE_SECONDS: int = 300
+
+    # --- Background work ---
+    # Whether the API process also drains the webhook queue. True is the
+    # right default for a single-process deployment; set it false and run
+    # `scripts/run_worker.py` when you want the sync load isolated from the
+    # request path. See app/services/job_worker.py.
+    WEBHOOK_WORKER_ENABLED: bool = True
+    WEBHOOK_WORKER_POLL_SECONDS: float = 5.0
 
     # --- AI insights (Anthropic) ---
     # Unset means the feature is OFF: /api/insights returns 503 rather than
@@ -151,6 +173,10 @@ class Settings(BaseSettings):
                 raise ValueError("PLAID_ENV must be 'production' in production")
             if not self.PLAID_WEBHOOK_URL.startswith("https://"):
                 raise ValueError("PLAID_WEBHOOK_URL must be an HTTPS URL in production")
+            if not self.ALLOWED_HOSTS:
+                raise ValueError("ALLOWED_HOSTS must be set in production")
+            if not self.FRONTEND_ORIGIN.startswith("https://"):
+                raise ValueError("FRONTEND_ORIGIN must be an HTTPS URL in production")
         return self
 
 

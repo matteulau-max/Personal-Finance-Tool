@@ -84,6 +84,16 @@ from spending, income is separated rather than netted, and every figure uses
 effective (user-corrected) values. See
 [`docs/milestone-06-analytics.md`](docs/milestone-06-analytics.md).
 
+## AI insights
+
+Ask questions in plain English and get answers where **every number is
+traceable to a query**. The model chooses which analytics function to call;
+PostgreSQL computes the figure; the model only phrases the answer. Before an
+answer is returned, every number in it is checked against what the queries
+actually produced — anything unaccounted for is discarded rather than shown.
+Off unless `ANTHROPIC_API_KEY` is set. See
+[`docs/milestone-07-ai-insights.md`](docs/milestone-07-ai-insights.md).
+
 ## Categorization
 
 Transactions are enriched as they arrive: merchants are normalized, then
@@ -111,8 +121,8 @@ sync can never overwrite a user's manual corrections. See
 | 4 | Plaid integration & transaction sync | ✅ Complete |
 | 5 | Categorization, merchants, rules, tags | ✅ Complete |
 | 6 | Dashboards & analytics | ✅ Complete |
-| 7 | AI insights | ⬜ Next |
-| 8 | Deployment & hardening | ⬜ |
+| 7 | AI insights | ✅ Complete |
+| 8 | Deployment & hardening | ⬜ Next |
 
 ## Security
 
@@ -130,3 +140,6 @@ sync can never overwrite a user's manual corrections. See
   returned by any endpoint, and never logged.
 - Webhooks are verified by ES256 signature, raw-body hash, and a five-minute
   replay window before any payload is parsed.
+- The AI layer is read-only and bound to one user: no tool writes, and no tool
+  schema accepts a user id, so there is no argument a prompt injection could
+  set to reach another person's data.

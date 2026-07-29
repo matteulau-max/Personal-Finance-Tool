@@ -414,3 +414,16 @@ export type Overview = {
 export function getOverview(months = 12): Promise<Result<Overview>> {
   return authedJson<Overview>(`/api/analytics/overview?months=${months}`);
 }
+
+export type Suggestion = { question: string };
+
+/**
+ * Starter questions for the ask panel.
+ *
+ * Static on the server, so this works even when insights are switched off --
+ * paying for a model round trip to render four buttons would be a strange
+ * way to spend an API call.
+ */
+export function getInsightSuggestions(): Promise<Result<Suggestion[]>> {
+  return authedJson<Suggestion[]>("/api/insights/suggestions");
+}

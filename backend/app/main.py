@@ -13,6 +13,7 @@ from app.api.routes import (
     accounts,
     analytics,
     health,
+    insights,
     me,
     plaid,
     taxonomy,
@@ -48,3 +49,4 @@ app.include_router(plaid.router)
 app.include_router(transactions.router)
 app.include_router(taxonomy.router)
 app.include_router(analytics.router)
+app.include_router(insights.router)

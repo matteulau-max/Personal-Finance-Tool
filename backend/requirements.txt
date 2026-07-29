@@ -22,6 +22,11 @@ PyJWT[crypto]==2.10.1
 # Plaid access tokens at rest (app/core/crypto.py).
 plaid-python==42.0.0
 
+# AI insights.
+# The official Anthropic SDK. Imported lazily inside app/services/ai_gateway.py
+# so a deployment that leaves ANTHROPIC_API_KEY unset never loads it.
+anthropic==0.120.2
+
 # Testing
 pytest==8.3.4
 httpx==0.28.1

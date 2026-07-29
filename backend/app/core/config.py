@@ -85,6 +85,18 @@ class Settings(BaseSettings):
     # recommends 5 minutes; it is what stops a captured webhook being replayed.
     PLAID_WEBHOOK_MAX_AGE_SECONDS: int = 300
 
+    # --- AI insights (Anthropic) ---
+    # Unset means the feature is OFF: /api/insights returns 503 rather than
+    # degrading into an answer nobody computed. An AI feature that half-works
+    # is worse than one that is plainly unavailable.
+    ANTHROPIC_API_KEY: str = ""
+    AI_MODEL: str = "claude-opus-5"
+    # Generous: a question needing several tool calls does several round trips
+    # inside one request, and a timeout mid-conversation wastes every call
+    # already paid for.
+    AI_TIMEOUT_SECONDS: float = 120.0
+    AI_MAX_RETRIES: int = 2
+
     @property
     def is_production(self) -> bool:
         return self.ENVIRONMENT == "production"
@@ -96,6 +108,10 @@ class Settings(BaseSettings):
     @property
     def plaid_configured(self) -> bool:
         return bool(self.PLAID_CLIENT_ID and self.PLAID_SECRET)
+
+    @property
+    def ai_configured(self) -> bool:
+        return bool(self.ANTHROPIC_API_KEY)
 
     @property
     def plaid_host(self) -> str:

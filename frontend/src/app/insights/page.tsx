@@ -5,7 +5,8 @@ import { BudgetMeters } from "@/components/charts/budget-meters";
 import { CashFlowChart } from "@/components/charts/cash-flow-chart";
 import { NetWorthChart } from "@/components/charts/net-worth-chart";
 import { HeroFigure, StatTile } from "@/components/charts/stat-tile";
-import { getOverview } from "@/lib/api";
+import { AskPanel } from "@/components/ask-panel";
+import { getInsightSuggestions, getOverview } from "@/lib/api";
 import { clerkEnabled } from "@/lib/clerk";
 
 function money(value: string | null, fallback = "—"): string {
@@ -40,7 +41,10 @@ export default async function InsightsPage() {
     );
   }
 
-  const overview = await getOverview(12);
+  const [overview, suggestions] = await Promise.all([
+    getOverview(12),
+    getInsightSuggestions(),
+  ]);
 
   if (!overview.ok) {
     return (
@@ -73,6 +77,12 @@ export default async function InsightsPage() {
           </Link>
         </nav>
       </header>
+
+      <AskPanel
+        suggestions={
+          suggestions.ok ? suggestions.data.map((item) => item.question) : []
+        }
+      />
 
       {/* One hero figure. If everything is a hero, nothing is. */}
       <HeroFigure

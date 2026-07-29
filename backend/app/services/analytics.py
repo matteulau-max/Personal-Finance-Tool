@@ -74,7 +74,7 @@ import uuid
 from dataclasses import dataclass
 from decimal import Decimal
 
-from sqlalchemy import Select, and_, case, func, literal, or_, select
+from sqlalchemy import Select, and_, func, literal, or_, select
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -485,6 +485,108 @@ def largest_transactions(
         .limit(limit)
     )
     return list(db.execute(statement).scalars().unique().all())
+
+
+def search_transactions(
+    db: Session,
+    user: User,
+    *,
+    start: dt.date,
+    end: dt.date,
+    category_slug: str | None = None,
+    merchant_name: str | None = None,
+    min_amount: Decimal | None = None,
+    max_amount: Decimal | None = None,
+    limit: int = 25,
+) -> list[Transaction]:
+    """Filtered transaction lookup: "restaurants over $100 last month".
+
+    Every filter is optional and every one is applied in SQL. The `limit` is
+    not optional -- an unbounded result set is how a question about one month
+    turns into thirty thousand rows.
+
+    `category_slug` matches the category *or any of its children*, because a
+    user who asks about "food and drink" means the whole subtree, not the
+    handful of transactions that landed on the parent node itself.
+    """
+    statement = (
+        _base_transactions(user)
+        .outerjoin(*_effective_category_join())
+        .where(
+            Transaction.effective_date >= start,
+            Transaction.effective_date <= end,
+        )
+    )
+
+    if category_slug:
+        statement = statement.where(
+            or_(
+                Category.slug == category_slug,
+                Category.slug.startswith(f"{category_slug}."),
+            )
+        )
+
+    if merchant_name:
+        # ILIKE, not a regex: a user-supplied regular expression is a denial
+        # of service waiting to happen (the same reasoning as `rules.py`).
+        statement = statement.where(
+            Transaction.effective_description.ilike(f"%{merchant_name}%")
+        )
+
+    if min_amount is not None:
+        statement = statement.where(Transaction.effective_amount >= min_amount)
+
+    if max_amount is not None:
+        statement = statement.where(Transaction.effective_amount <= max_amount)
+
+    statement = statement.order_by(Transaction.effective_date.desc()).limit(limit)
+
+    return list(db.execute(statement).scalars().unique().all())
+
+
+# ---------------------------------------------------------------------------
+# Forecast
+# ---------------------------------------------------------------------------
+
+
+def forecast_next_month(
+    db: Session, user: User, *, months: int = 3
+) -> tuple[Decimal, int]:
+    """Projected spending next month: the mean of recent COMPLETE months.
+
+    Returns (projection, months_used) so the caller can say how much history
+    the figure rests on -- a forecast from one month is a very different
+    object from a forecast from six, and presenting them identically would be
+    dishonest.
+
+    ===================================================================
+    What this is, and what it is not
+    ===================================================================
+
+    It is an average. It is not a model. It carries no trend, no seasonality,
+    no awareness that December exists, and no confidence interval. A user who
+    took a holiday last month will see that holiday projected into next month.
+
+    That is a deliberate choice rather than a shortcut. The alternative --
+    fitting a trend to a handful of noisy monthly totals -- produces a figure
+    that *looks* far more authoritative while being barely more accurate, and
+    on a personal finance dashboard, unearned authority is the more expensive
+    error. A mean is something the user can verify in their head against the
+    cash-flow chart sitting next to it.
+
+    The current month is excluded for the same reason as `burn_rate`: on the
+    3rd it is a fraction of a month and would drag the average down.
+    """
+    today = dt.date.today()
+    end = _start_of_month(today) - dt.timedelta(days=1)
+    start = _start_of_month(_add_months(end, -(months - 1)))
+
+    summaries = monthly_summary(db, user, start=start, end=end)
+    if not summaries:
+        return ZERO, 0
+
+    total = sum((summary.spending for summary in summaries), ZERO)
+    return (total / len(summaries)).quantize(Decimal("0.01")), len(summaries)
 
 
 # ---------------------------------------------------------------------------

@@ -26,7 +26,8 @@ export default async function Home() {
           Personal Finance Dashboard
         </h1>
         <p className="text-zinc-600 dark:text-zinc-400">
-          Milestone 3 &mdash; authentication and authorization.
+          Your accounts, transactions and spending in one place &mdash; with a
+          complete history that never duplicates and never loses a correction.
         </p>
       </header>
 

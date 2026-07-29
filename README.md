@@ -41,18 +41,41 @@ cd backend
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
+
+# Generate an encryption key and paste it into ENCRYPTION_KEYS in .env.
+# The placeholder in .env.example is not a valid key, and the server now
+# refuses to start with it rather than failing later, when you link a bank.
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+
 alembic upgrade head          # create tables + seed categories
 uvicorn app.main:app --reload --port 8000
+```
 
+Then, in a **second terminal** (the backend keeps running in the first):
+
+```bash
 # Frontend →  http://localhost:3000
-cd frontend
+cd frontend                   # from the repository root, not from backend/
 npm install
 cp .env.example .env.local
 npm run dev
 ```
 
 Visit <http://localhost:3000> — the status card should report the backend as
-**Connected**.
+**Connected** and the database as **Connected**, with authentication listed as
+*Not configured* until you add Clerk keys. That state is expected and the app
+runs in it; you just cannot sign in yet.
+
+To go further you need two free accounts, and their keys go in different
+places:
+
+| Keys | From | Put them in |
+|---|---|---|
+| Clerk publishable + secret | Clerk dashboard → API keys | `frontend/.env.local` |
+| Plaid client ID + secret | Plaid dashboard → Developers → Keys | `backend/.env` |
+
+Start with `PLAID_ENV=sandbox`: fake banks, test credentials Plaid gives you,
+and no real money anywhere near it.
 
 ## Tests
 

@@ -5,6 +5,7 @@ import { ConnectBank } from "@/components/connect-bank";
 import { ConnectionList } from "@/components/connection-list";
 import { getAccounts, getMe, getPlaidItems } from "@/lib/api";
 import { clerkEnabled } from "@/lib/clerk";
+import { requireSignedIn } from "@/lib/require-signed-in";
 
 function ClerkSetupNotice() {
   return (
@@ -48,6 +49,11 @@ export default async function DashboardPage() {
   if (!clerkEnabled) {
     return <ClerkSetupNotice />;
   }
+
+  // The auth check lives here, in the page, not in a route matcher. See
+  // src/lib/require-signed-in.ts -- the matcher had already drifted out of
+  // step with the pages that needed it.
+  await requireSignedIn();
 
   const [me, accounts, items] = await Promise.all([
     getMe(),

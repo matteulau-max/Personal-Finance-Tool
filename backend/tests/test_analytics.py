@@ -373,11 +373,21 @@ def test_multiple_snapshots_in_one_day_are_not_double_counted(
     db.add(checking)
     db.flush()
 
-    for hours, balance in ((3, "1000"), (2, "1100"), (1, "1234")):
+    # Anchored to midday rather than "now minus N hours".
+    #
+    # The relative version passed for twenty-three hours a day and failed in
+    # the window just after UTC midnight, when subtracting three hours put
+    # the earlier snapshots on the *previous* date and the query correctly
+    # returned two points. A test that depends on what time you run it is
+    # worse than no test: it teaches people to re-run until it goes green.
+    midday = dt.datetime.combine(
+        utc_now.date(), dt.time(12, 0), tzinfo=dt.timezone.utc
+    )
+    for minutes, balance in ((0, "1000"), (30, "1100"), (60, "1234")):
         db.add(
             AccountBalance(
                 account_id=checking.id,
-                as_of=utc_now - dt.timedelta(hours=hours),
+                as_of=midday + dt.timedelta(minutes=minutes),
                 current_balance=Decimal(balance),
             )
         )

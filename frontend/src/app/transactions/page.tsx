@@ -3,6 +3,7 @@ import Link from "next/link";
 import { TransactionRow } from "@/components/transaction-row";
 import { getCategories, getTags, getTransactions } from "@/lib/api";
 import { clerkEnabled } from "@/lib/clerk";
+import { requireSignedIn } from "@/lib/require-signed-in";
 
 /**
  * The transactions page.
@@ -30,6 +31,11 @@ export default async function TransactionsPage({
       </main>
     );
   }
+
+  // This page was never covered by the route matcher in proxy.ts, so a
+  // signed-out visitor used to get "No active session." rendered as an
+  // error. See src/lib/require-signed-in.ts.
+  await requireSignedIn();
 
   const params = await searchParams;
   const asString = (value: string | string[] | undefined): string | undefined =>

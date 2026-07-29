@@ -8,6 +8,7 @@ import { HeroFigure, StatTile } from "@/components/charts/stat-tile";
 import { AskPanel } from "@/components/ask-panel";
 import { getInsightSuggestions, getOverview } from "@/lib/api";
 import { clerkEnabled } from "@/lib/clerk";
+import { requireSignedIn } from "@/lib/require-signed-in";
 
 function money(value: string | null, fallback = "—"): string {
   if (value === null) return fallback;
@@ -40,6 +41,10 @@ export default async function InsightsPage() {
       </main>
     );
   }
+
+  // As with /transactions: never covered by the route matcher. See
+  // src/lib/require-signed-in.ts.
+  await requireSignedIn();
 
   const [overview, suggestions] = await Promise.all([
     getOverview(12),

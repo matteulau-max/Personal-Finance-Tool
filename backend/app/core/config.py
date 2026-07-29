@@ -149,6 +149,46 @@ class Settings(BaseSettings):
         return f"{self.CLERK_ISSUER.rstrip('/')}/.well-known/jwks.json"
 
     @model_validator(mode="after")
+    def _encryption_keys_must_actually_work(self) -> "Settings":
+        """Reject a key that is present but unusable.
+
+        Found by following this project's own setup instructions. `cp
+        .env.example .env` leaves the literal placeholder
+        `["replace-with-a-generated-fernet-key"]` in place, and every check we
+        had was satisfied by that: the list is non-empty, so even the
+        production validator below passed it.
+
+        The failure instead surfaced at `Fernet(...)` -- which happens the
+        first time a Plaid access token is encrypted, which is the moment
+        somebody finishes entering their bank credentials. That is the worst
+        possible time to discover a configuration typo, and in production it
+        would have been a successful deploy followed by every bank link
+        failing.
+
+        An empty list is still allowed: it means the feature is switched off,
+        which is a legitimate state for CI and for a first look at the app. A
+        key that is set but wrong is never intentional.
+        """
+        if not self.ENCRYPTION_KEYS:
+            return self
+
+        from cryptography.fernet import Fernet
+
+        for index, key in enumerate(self.ENCRYPTION_KEYS):
+            try:
+                Fernet(key.encode() if isinstance(key, str) else key)
+            except Exception as exc:
+                raise ValueError(
+                    f"ENCRYPTION_KEYS[{index}] is not a usable Fernet key "
+                    f"({type(exc).__name__}). Each key must be 32 url-safe "
+                    "base64-encoded bytes. Generate one with:\n"
+                    '  python -c "from cryptography.fernet import Fernet; '
+                    'print(Fernet.generate_key().decode())"'
+                ) from exc
+
+        return self
+
+    @model_validator(mode="after")
     def _refuse_to_start_insecurely(self) -> "Settings":
         """Fail fast if production is misconfigured.
 

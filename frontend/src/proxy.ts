@@ -10,32 +10,37 @@
  * WHAT THIS DOES AND DOES NOT DO
  * ------------------------------
  * `clerkMiddleware()` reads the session cookie and makes auth state available
- * to server components. `auth.protect()` redirects signed-out visitors away
- * from private pages.
+ * to server components. That is now ALL it does.
  *
- * This is a **user experience** control, not a security boundary. It stops
- * someone seeing a broken empty dashboard; it does not stop them calling the
- * API directly with curl. The real enforcement is the token check on the
- * FastAPI side, which runs on every request no matter who is asking.
+ * It used to also decide which pages were private, with
+ * `createRouteMatcher(["/dashboard(.*)"])`. Clerk deprecated that, and their
+ * reason turned out to describe this codebase exactly:
  *
- * Next.js documents this explicitly: proxy is for optimistic checks, not for
- * authorization. Never let it be the only thing standing between a request
- * and someone's data.
+ *   "Middleware-based auth checks rely on path matching, which can diverge
+ *    from how Next.js routes requests and leave protected resources
+ *    reachable."
+ *
+ * It had diverged. `/transactions` and `/insights` arrived in later
+ * milestones and nobody updated the matcher, so neither was ever protected --
+ * a signed-out visitor got a page rendering "No active session." instead of
+ * being redirected to sign in. The list of private pages was in a different
+ * file from the pages.
+ *
+ * Each page now calls `requireSignedIn()` itself. See
+ * src/lib/require-signed-in.ts.
+ *
+ * Either way this is a **user experience** control, not a security boundary.
+ * It stops someone seeing a broken empty dashboard; it does not stop them
+ * calling the API directly with curl. The real enforcement is the token check
+ * on the FastAPI side, which runs on every request no matter who is asking.
  */
 
-import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { clerkMiddleware } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 
 import { clerkEnabled } from "@/lib/clerk";
 
-// Routes that require a signed-in user. Everything else stays public.
-const isProtectedRoute = createRouteMatcher(["/dashboard(.*)"]);
-
-const clerkProxy = clerkMiddleware(async (auth, request) => {
-  if (isProtectedRoute(request)) {
-    await auth.protect();
-  }
-});
+const clerkProxy = clerkMiddleware();
 
 // When Clerk is not configured, pass every request straight through so the
 // app still runs. See src/lib/clerk.ts for why.

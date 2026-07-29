@@ -9,6 +9,8 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
+from cryptography.fernet import Fernet
+
 from app.core.config import Settings
 
 
@@ -58,7 +60,10 @@ def production(**overrides) -> dict:
         DEBUG=False,
         CLERK_ISSUER="https://clerk.example.com",
         CLERK_AUTHORIZED_PARTIES=["https://app.example.com"],
-        ENCRYPTION_KEYS=["a" * 44],
+        # A real one. A plausible-looking string would now be rejected --
+        # which is the point of the validator this fixture would otherwise
+        # be quietly working around.
+        ENCRYPTION_KEYS=[Fernet.generate_key().decode()],
         PLAID_ENV="production",
         PLAID_WEBHOOK_URL="https://api.example.com/api/plaid/webhook",
         ALLOWED_HOSTS=["api.example.com"],
@@ -94,6 +99,24 @@ def test_production_refuses_to_start_when_misconfigured(override, expected):
     """
     with pytest.raises(ValueError, match=expected):
         Settings(**production(**override))
+
+
+def test_a_placeholder_encryption_key_is_refused_everywhere():
+    """The one that following the setup instructions produced.
+
+    `cp .env.example .env` leaves this literal string in place. Every check we
+    had passed it -- the list is non-empty -- and the failure surfaced only
+    when a Plaid access token was first encrypted, which is the moment after
+    somebody enters their bank credentials.
+    """
+    with pytest.raises(ValueError, match="not a usable Fernet key"):
+        Settings(ENCRYPTION_KEYS=["replace-with-a-generated-fernet-key"])
+
+
+def test_no_encryption_key_at_all_is_still_allowed_locally():
+    """Off is a legitimate state -- CI, and a first look at the app. Only a
+    key that is set and wrong is always a mistake."""
+    assert Settings(ENCRYPTION_KEYS=[]).ENCRYPTION_KEYS == []
 
 
 def test_local_development_needs_none_of_it():

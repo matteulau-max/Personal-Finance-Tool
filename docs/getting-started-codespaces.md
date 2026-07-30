@@ -212,14 +212,48 @@ Sandbox uses `PLAID_ENV=sandbox` and your sandbox secret. Real banks need
 that a human reviews — expect days, not minutes, and they will ask what your
 app does and how you handle data.
 
-Once approved you get a *different* secret. Then in `backend/.env`:
+Once approved you get a *different* secret — same dashboard page as the sandbox
+one, different column. `PLAID_CLIENT_ID` is unchanged. In `backend/.env`:
 
 ```
 PLAID_ENV=production
 PLAID_SECRET=your-production-secret
 ```
 
-Restart, and link again — sandbox connections do not carry over.
+**Change only those two.** `ENVIRONMENT` and `PLAID_ENV` are separate settings
+and it is tempting to set both:
+
+| Setting | Means | In a Codespace |
+|---|---|---|
+| `PLAID_ENV` | Which Plaid to talk to | `production` once approved |
+| `ENVIRONMENT` | How this deployment is hosted | stays `local` |
+
+Setting `ENVIRONMENT=production` makes the app refuse to start without an
+HTTPS frontend origin, an `ALLOWED_HOSTS` list, an HTTPS webhook URL and
+`DEBUG=false` — none of which a Codespace has. That check is doing its job; it
+exists so a real deployment cannot go out misconfigured. It is simply not the
+switch that selects real banks.
+
+Restart and link again. Sandbox connections do not carry over: the old access
+token is not valid against production, so disconnect it and link fresh.
+
+Nothing changes in the frontend — Plaid Link takes its environment from the
+link token the backend mints.
+
+Two things to know before real financial data lands in a Codespace:
+
+- **A deleted Codespace takes the database and the encryption key with it.**
+  Relinking and resyncing rebuilds the transaction history, but manual
+  categorizations and corrections are not recoverable. This is the point at
+  which deploying somewhere permanent starts to be worth it.
+- **Check the Ports tab.** Both ports should show visibility **Private**.
+  That is the default, but the data behind them is no longer fictional, so it
+  is worth confirming rather than assuming.
+
+Also confirm `DEBUG` is still `true` only because this is a local environment —
+it keeps the interactive API docs and detailed errors switched on, which is
+fine behind a private forwarded port and is exactly what `ENVIRONMENT=production`
+turns off when you deploy for real.
 
 Before you point this at real financial data, read
 [`milestone-08-hardening.md`](milestone-08-hardening.md), particularly the part

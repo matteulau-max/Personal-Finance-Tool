@@ -29,7 +29,7 @@ from app.models import (
     TransactionStatus,
     User,
 )
-from app.services.plaid_gateway import PlaidApiError
+from app.services.plaid_gateway import PlaidApiError, PlaidInstitution
 from app.services.sync import SyncEngine, link_institution
 from tests.fake_plaid import FakePlaidGateway, make_account, make_txn, page
 
@@ -680,6 +680,32 @@ def test_linking_creates_the_institution_once(db: Session, user: User):
         .where(Institution.plaid_institution_id == "ins_fake")
     ).scalar_one()
     assert count == 1
+
+
+def test_linking_stores_a_logo_far_larger_than_a_url(db: Session, user: User):
+    """A bank's logo must not be able to block the connection.
+
+    Plaid returns the image itself, base64-encoded, rather than a link to it.
+    American Express's is around 3.5 KB, which a bounded column rejects --
+    and because the institution is written before the item, the rejection
+    rolled back the entire link. The bank simply could not be added.
+    """
+    big_logo = "data:image/png;base64," + ("iVBORw0KGgo" * 400)
+    gateway = FakePlaidGateway(
+        institution=PlaidInstitution(
+            institution_id="ins_10",
+            name="American Express",
+            logo_url=big_logo,
+        )
+    )
+
+    link_institution(db, gateway, user_id=user.id, public_token="tok")
+
+    stored = db.execute(
+        select(Institution).where(Institution.plaid_institution_id == "ins_10")
+    ).scalar_one()
+    assert stored.logo_url == big_logo
+    assert len(stored.logo_url) > 1024
 
 
 def test_linking_imports_accounts(db: Session, user: User):

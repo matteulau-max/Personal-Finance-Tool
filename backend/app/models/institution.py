@@ -12,7 +12,7 @@ them end up inconsistent.
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import String
+from sqlalchemy import String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -32,7 +32,17 @@ class Institution(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     # Branding, used to make the accounts list recognizable at a glance.
-    logo_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    #
+    # Text, not String(n). Plaid does not return a link to a logo -- it returns
+    # the image itself, base64-encoded, which the gateway wraps as a `data:`
+    # URI. American Express's is around 3.5 KB, so a bounded column rejects it
+    # outright: PostgreSQL refuses to truncate rather than silently trimming,
+    # which failed the INSERT and rolled back the entire bank connection.
+    #
+    # A larger bound would only move the ceiling. The size here is decided by
+    # whatever image an institution happens to publish, so there is no length
+    # this column could pick that some bank could not exceed.
+    logo_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     primary_color: Mapped[str | None] = mapped_column(String(16), nullable=True)
     website_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
 

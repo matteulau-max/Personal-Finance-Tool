@@ -214,6 +214,28 @@ def _to_decimal(value: Any) -> Decimal | None:
     return Decimal(str(value))
 
 
+def _logo_to_data_uri(logo: str | None) -> str | None:
+    """Turn Plaid's `logo` field into something usable as an image source.
+
+    Plaid's field is named `logo`, not `logo_url`, and the distinction is the
+    whole point: the value is a base64-encoded PNG, not a link to one. Storing
+    it unchanged in a column called `logo_url` would put it one `<img src>`
+    away from a broken image, with nothing in the value's name to warn anyone.
+
+    Wrapping it as a `data:` URI makes the column's name true and the value
+    directly renderable, at the cost of a few kilobytes per institution --
+    of which there is one row per bank, shared across all users.
+
+    Values that already look like URLs are passed through untouched, so this
+    stays correct if Plaid ever returns a real link.
+    """
+    if not logo:
+        return None
+    if logo.startswith(("http://", "https://", "data:")):
+        return logo
+    return f"data:image/png;base64,{logo}"
+
+
 class LivePlaidGateway:
     """Talks to the real Plaid API."""
 
@@ -371,7 +393,7 @@ class LivePlaidGateway:
         return PlaidInstitution(
             institution_id=institution["institution_id"],
             name=institution["name"],
-            logo_url=institution.get("logo"),
+            logo_url=_logo_to_data_uri(institution.get("logo")),
             primary_color=institution.get("primary_color"),
             website_url=institution.get("url"),
         )

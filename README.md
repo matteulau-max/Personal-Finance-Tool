@@ -29,7 +29,14 @@ docker-compose.yml   Local PostgreSQL
 
 ## Quick start
 
-Full, beginner-oriented instructions live in
+Already set up? `./start.sh` starts the database, applies migrations, and runs
+both servers in one terminal.
+
+Starting from nothing, and would rather not install anything on your own
+machine? [`docs/getting-started-codespaces.md`](docs/getting-started-codespaces.md)
+is a step-by-step guide for GitHub Codespaces, written for someone new to this.
+
+Full local instructions live in
 [`docs/milestone-01-setup.md`](docs/milestone-01-setup.md). The short version:
 
 ```bash

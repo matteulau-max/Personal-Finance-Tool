@@ -120,6 +120,7 @@ class FakePlaidGateway:
         # Failure injection.
         self.raise_on_sync: PlaidApiError | None = None
         self.raise_on_sync_after_pages: int | None = None
+        self.raise_on_remove: PlaidApiError | None = None
 
     # -- link / item -----------------------------------------------------
 
@@ -148,6 +149,8 @@ class FakePlaidGateway:
         return self.accounts
 
     def remove_item(self, *, access_token: str) -> None:
+        if self.raise_on_remove is not None:
+            raise self.raise_on_remove
         self.removed_items.append(access_token)
 
     # -- data ------------------------------------------------------------

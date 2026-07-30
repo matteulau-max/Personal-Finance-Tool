@@ -266,13 +266,21 @@ def disconnect_item(
             status_code=status.HTTP_404_NOT_FOUND, detail="Connection not found"
         )
 
-    try:
-        gateway.remove_item(access_token=decrypt(item.access_token_encrypted))
-    except PlaidApiError as exc:
-        # Already invalid at Plaid's end is a success for our purposes.
-        if not exc.requires_user_reauth and exc.error_code != "ITEM_NOT_FOUND":
-            raise _plaid_error_to_http(exc) from exc
-        logger.info("Plaid item already invalid on removal: %s", exc.error_code)
+    # An item disconnected earlier has no token left to revoke, and decrypting
+    # the empty string would raise rather than say so. Nothing to do at Plaid;
+    # fall through and let the state below be reasserted harmlessly.
+    if item.access_token_encrypted:
+        try:
+            gateway.remove_item(access_token=decrypt(item.access_token_encrypted))
+        except PlaidApiError as exc:
+            # Already invalid at Plaid's end is a success for our purposes:
+            # the point of the call is that no usable credential survives, and
+            # a token Plaid rejects is one. Anything else is a real failure and
+            # must stop us -- we would otherwise report a revocation that did
+            # not happen.
+            if not exc.requires_user_reauth and not exc.token_already_invalid:
+                raise _plaid_error_to_http(exc) from exc
+            logger.info("Plaid item already invalid on removal: %s", exc.error_code)
 
     item.status = PlaidItemStatus.DISCONNECTED
     # Overwritten rather than left in place: there is no reason to keep a

@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.core.crypto import encrypt
 from app.models import PlaidItem, PlaidItemStatus, Transaction
-from app.services.plaid_gateway import get_plaid_gateway
+from app.services.plaid_gateway import PlaidApiError, get_plaid_gateway
 from tests.auth_helpers import auth_header
 from tests.fake_plaid import FakePlaidGateway, make_txn, page
 
@@ -332,6 +332,86 @@ def test_disconnected_items_are_hidden_from_the_list(
     client.delete(f"/api/plaid/items/{item.id}", headers=auth_header(token))
 
     assert client.get("/api/plaid/items", headers=auth_header(token)).json() == []
+
+
+@pytest.mark.parametrize("error_code", ["ITEM_NOT_FOUND", "INVALID_ACCESS_TOKEN"])
+def test_disconnect_succeeds_when_the_token_is_already_invalid(
+    plaid_client, db: Session, authenticated_user, error_code
+):
+    """A token Plaid rejects must not make a connection undeletable.
+
+    INVALID_ACCESS_TOKEN is the one that actually happens: switching PLAID_ENV
+    from sandbox to production invalidates every token minted before the
+    switch. Since revocation is attempted before the row is cleaned up, an
+    unforgiven error here fails identically on every attempt, stranding the
+    user with a dead connection they cannot remove.
+    """
+    client, gateway = plaid_client
+    user, token = authenticated_user
+    gateway.raise_on_remove = PlaidApiError(error_code, "no such token")
+    item = existing_item(db, user)
+    db.flush()
+
+    response = client.delete(
+        f"/api/plaid/items/{item.id}", headers=auth_header(token)
+    )
+
+    assert response.status_code == 204
+
+    db.expire_all()
+    db.refresh(item)
+    assert item.status == PlaidItemStatus.DISCONNECTED
+    # Still cleared: the token is worthless, and keeping it serves nothing.
+    assert item.access_token_encrypted == ""
+
+
+def test_disconnect_fails_loudly_when_revocation_genuinely_fails(
+    plaid_client, db: Session, authenticated_user
+):
+    """The tolerance above must not become "ignore every error".
+
+    If Plaid is down, the credential is still live. Reporting success would
+    tell the user their bank access was revoked when it was not, and clearing
+    our token would destroy the only means of ever revoking it.
+    """
+    client, gateway = plaid_client
+    user, token = authenticated_user
+    gateway.raise_on_remove = PlaidApiError("INTERNAL_SERVER_ERROR", "Plaid is down")
+    item = existing_item(db, user)
+    db.flush()
+
+    response = client.delete(
+        f"/api/plaid/items/{item.id}", headers=auth_header(token)
+    )
+
+    assert response.status_code >= 400
+
+    db.expire_all()
+    db.refresh(item)
+    assert item.status != PlaidItemStatus.DISCONNECTED
+    assert item.access_token_encrypted != ""
+
+
+def test_disconnecting_an_already_disconnected_item_does_not_error(
+    plaid_client, db: Session, authenticated_user
+):
+    """The second click must not produce a 500.
+
+    A disconnected item holds an empty token, and decrypting that raises
+    rather than returning an empty string -- so the guard has to come before
+    the call, not inside it.
+    """
+    client, _ = plaid_client
+    user, token = authenticated_user
+    item = existing_item(db, user)
+    db.flush()
+
+    client.delete(f"/api/plaid/items/{item.id}", headers=auth_header(token))
+    response = client.delete(
+        f"/api/plaid/items/{item.id}", headers=auth_header(token)
+    )
+
+    assert response.status_code == 204
 
 
 def test_disconnecting_another_users_item_returns_404(

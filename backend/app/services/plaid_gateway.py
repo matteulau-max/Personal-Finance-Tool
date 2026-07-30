@@ -128,6 +128,30 @@ class PlaidApiError(Exception):
         }
 
     @property
+    def token_already_invalid(self) -> bool:
+        """Plaid will not accept this token, and no retry will change that.
+
+        The distinction that matters is between "the call failed" and "there
+        is nothing behind this token to act on". Both of these mean the
+        latter, so an operation whose goal is *removal* has already got what
+        it wanted:
+
+        - ITEM_NOT_FOUND     -- the item is gone from Plaid's side already.
+        - INVALID_ACCESS_TOKEN -- the token is not one this Plaid environment
+          recognises. The way to reach it is switching PLAID_ENV: a token
+          minted in sandbox is meaningless to production and vice versa, so
+          every connection made before the switch is left holding one.
+
+        Treating these as failures makes such a connection permanently
+        undeletable -- the revoke is attempted first by design, so it fails
+        before the row is ever cleaned up, and it will fail identically every
+        time. That leaves the user with a dead connection they cannot remove
+        and a stored token we promised to stop keeping. Neither is safer than
+        proceeding; both are worse.
+        """
+        return self.error_code in {"ITEM_NOT_FOUND", "INVALID_ACCESS_TOKEN"}
+
+    @property
     def is_transient(self) -> bool:
         """Worth retrying later; not worth surfacing to the user."""
         return self.error_code in {

@@ -16,9 +16,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.crypto import encrypt
-from app.models import PlaidItem, PlaidItemStatus, Transaction
+from app.models import Account, PlaidItem, PlaidItemStatus, Transaction
 from app.services.plaid_gateway import PlaidApiError, get_plaid_gateway
 from tests.auth_helpers import auth_header
+from tests.conftest import make_account
 from tests.fake_plaid import FakePlaidGateway, make_txn, page
 
 
@@ -319,6 +320,56 @@ def test_disconnect_keeps_the_transaction_history(
         .all()
     )
     assert len(remaining) == 1
+
+
+def test_disconnect_retires_the_accounts(
+    plaid_client, db: Session, authenticated_user
+):
+    """A disconnected bank's accounts must stop being listed as live.
+
+    `is_active` is what the accounts page and every balance query filter on.
+    Left true, the accounts keep appearing with whatever balance they held at
+    the moment of disconnection, and keep counting toward net worth -- frozen
+    figures presented as current ones, which is worse than showing nothing.
+    """
+    client, _ = plaid_client
+    user, token = authenticated_user
+    item = existing_item(db, user)
+    account = make_account(db, user)
+    account.plaid_item_id = item.id
+    db.flush()
+
+    client.delete(f"/api/plaid/items/{item.id}", headers=auth_header(token))
+
+    db.expire_all()
+    db.refresh(account)
+    assert account.is_active is False
+
+    listed = client.get("/api/accounts", headers=auth_header(token)).json()
+    assert listed == []
+
+
+def test_disconnect_does_not_erase_the_accounts(
+    plaid_client, db: Session, authenticated_user
+):
+    """Retired, not deleted.
+
+    The account rows are what every historical transaction points at. Deleting
+    them to tidy the list would take the history with them, which is the
+    opposite of what disconnecting promises.
+    """
+    client, _ = plaid_client
+    user, token = authenticated_user
+    item = existing_item(db, user)
+    account = make_account(db, user)
+    account.plaid_item_id = item.id
+    db.flush()
+    account_id = account.id
+
+    client.delete(f"/api/plaid/items/{item.id}", headers=auth_header(token))
+
+    db.expire_all()
+    assert db.get(Account, account_id) is not None
 
 
 def test_disconnected_items_are_hidden_from_the_list(

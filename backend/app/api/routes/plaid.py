@@ -47,7 +47,13 @@ from app.core.rate_limit import (
     WebhookRateLimit,
 )
 from app.db.scoping import scoped_get, scoped_select
-from app.models import PlaidItem, PlaidItemStatus, SyncHistory, SyncTrigger
+from app.models import (
+    Account,
+    PlaidItem,
+    PlaidItemStatus,
+    SyncHistory,
+    SyncTrigger,
+)
 from app.schemas.plaid import (
     ExchangePublicTokenRequest,
     LinkTokenResponse,
@@ -287,6 +293,34 @@ def disconnect_item(
     # credential we have promised to stop using.
     item.access_token_encrypted = ""
     item.transactions_cursor = None
+
+    # Retire the accounts too, or they linger as live ones.
+    #
+    # `is_active` is what the accounts list and every balance query filter on,
+    # and nothing else in the codebase ever set it to False -- so a
+    # disconnected bank's accounts stayed on the accounts page with the
+    # balances they happened to hold at the moment of disconnection, and kept
+    # counting toward net worth forever. Frozen balances presented as current
+    # ones are worse than no balances: they are wrong in a way that looks
+    # right.
+    #
+    # Re-linking the same bank makes it visible, which is how it surfaces in
+    # practice. Plaid mints new account ids per connection, so the new link
+    # inserts a fresh set of rows rather than updating the old ones, and the
+    # user sees each account twice.
+    #
+    # This deliberately does NOT touch transactions. `is_active` gates balance
+    # queries only -- history, categorization and every analytic over past
+    # spending read through the transaction tables and are unaffected. That is
+    # what makes this consistent with the promise above: stop syncing, keep
+    # the history.
+    for account in db.execute(
+        scoped_select(Account, current_user).where(
+            Account.plaid_item_id == item.id
+        )
+    ).scalars():
+        account.is_active = False
+
     db.commit()
 
 

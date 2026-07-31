@@ -507,6 +507,31 @@ def test_a_transient_failure_leaves_the_item_healthy(db: Session, user: User):
     assert item.status == PlaidItemStatus.HEALTHY
 
 
+def test_a_bank_still_preparing_data_is_not_marked_broken(
+    db: Session, user: User
+):
+    """PRODUCT_NOT_READY is the normal state of a freshly linked bank.
+
+    Plaid accepts the connection before it has finished pulling history and
+    answers with this code until it has. Treated as permanent, the first
+    thing a user sees after successfully connecting their bank is a broken
+    connection -- and with no webhook configured locally, nothing arrives
+    later to correct it.
+    """
+    item = make_item(db, user)
+    gateway = FakePlaidGateway()
+    gateway.raise_on_sync = PlaidApiError(
+        "PRODUCT_NOT_READY", "the item is not ready yet"
+    )
+
+    run = SyncEngine(db, gateway).sync_item(item, SyncTrigger.MANUAL)
+
+    db.expire_all()
+    assert run.status == SyncStatus.FAILED
+    # The run failed, but the connection is fine and retrying will work.
+    assert item.status == PlaidItemStatus.HEALTHY
+
+
 def test_a_failed_run_is_recorded_in_sync_history(db: Session, user: User):
     """'My transactions are missing' must have an answer."""
     item = make_item(db, user)

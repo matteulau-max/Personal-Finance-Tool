@@ -153,13 +153,28 @@ class PlaidApiError(Exception):
 
     @property
     def is_transient(self) -> bool:
-        """Worth retrying later; not worth surfacing to the user."""
+        """Worth retrying later; not worth surfacing to the user.
+
+        PRODUCT_NOT_READY belongs here and is the one that bites hardest.
+        Plaid accepts a new connection before it has finished pulling that
+        institution's history, and answers `/transactions/sync` with this
+        code until it has -- usually a minute or two, occasionally longer.
+        It is the *normal* state of a freshly linked bank, not a fault.
+
+        Treated as permanent, it marks the item ERROR, so the first thing a
+        user sees after successfully connecting their bank is a broken
+        connection that in fact needed nothing but a moment's patience. With
+        no webhook configured -- the local-development default, since Plaid
+        cannot reach localhost -- nothing arrives later to correct the
+        impression either.
+        """
         return self.error_code in {
             "RATE_LIMIT_EXCEEDED",
             "INTERNAL_SERVER_ERROR",
             "PLANNED_MAINTENANCE",
             "INSTITUTION_DOWN",
             "INSTITUTION_NOT_RESPONDING",
+            "PRODUCT_NOT_READY",
         }
 
 

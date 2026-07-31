@@ -1,8 +1,8 @@
-import Link from "next/link";
 import { UserButton } from "@clerk/nextjs";
 
 import { ConnectBank } from "@/components/connect-bank";
 import { ConnectionList } from "@/components/connection-list";
+import { MainNav } from "@/components/main-nav";
 import { getAccounts, getMe, getPlaidItems } from "@/lib/api";
 import { clerkEnabled } from "@/lib/clerk";
 import { requireSignedIn } from "@/lib/require-signed-in";
@@ -84,12 +84,7 @@ export default async function DashboardPage() {
           </p>
         </div>
         <div className="flex items-center gap-4">
-          <Link href="/insights" className="text-sm underline">
-            Insights
-          </Link>
-          <Link href="/transactions" className="text-sm underline">
-            Transactions
-          </Link>
+          <MainNav current="/dashboard" />
           <UserButton />
         </div>
       </header>

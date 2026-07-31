@@ -359,6 +359,76 @@ def test_monthly_endpoint(client: TestClient, db: Session, authenticated_user):
     assert Decimal(body[0]["spending"]) == Decimal("42.00")
 
 
+def test_forecast_endpoint_averages_complete_months(
+    client: TestClient, db: Session, authenticated_user
+):
+    """The projection is a mean of complete months, and says how many."""
+    user, token = authenticated_user
+    account = make_account(db, user)
+    this_month = dt.date.today().replace(day=1)
+
+    # Two complete months at 100 and 200. The current month is deliberately
+    # loaded with a large amount that must NOT drag the average, because a
+    # partial month is not comparable to a whole one.
+    spend(db, account, "100.00", day=analytics._add_months(this_month, -1))
+    spend(db, account, "200.00", day=analytics._add_months(this_month, -2))
+    spend(db, account, "5000.00", day=dt.date.today())
+
+    body = client.get(
+        "/api/analytics/forecast?months=2", headers=auth_header(token)
+    ).json()
+
+    assert Decimal(body["projected_spending"]) == Decimal("150.00")
+    assert body["months_used"] == 2
+    assert len(body["basis"]) == 2
+
+
+def test_forecast_returns_the_months_it_averaged(
+    client: TestClient, db: Session, authenticated_user
+):
+    """The evidence ships with the figure.
+
+    A projection shown alone reads as a model output. Returning the months it
+    averaged is what lets the UI show its work, so the number can be checked
+    rather than trusted.
+    """
+    user, token = authenticated_user
+    account = make_account(db, user)
+    last_month = analytics._add_months(dt.date.today().replace(day=1), -1)
+    spend(db, account, "80.00", day=last_month)
+
+    body = client.get(
+        "/api/analytics/forecast?months=1", headers=auth_header(token)
+    ).json()
+
+    assert body["basis"][0]["period_start"] == last_month.isoformat()
+    assert Decimal(body["basis"][0]["spending"]) == Decimal("80.00")
+
+
+def test_forecast_with_no_history_is_zero_not_an_error(
+    client: TestClient, db: Session, authenticated_user
+):
+    """A brand-new account has nothing to average.
+
+    Zero months used is the honest answer, and the response must still be
+    well-formed -- a freshly linked bank is the most likely time for someone
+    to open this page.
+    """
+    _, token = authenticated_user
+
+    response = client.get("/api/analytics/forecast", headers=auth_header(token))
+
+    assert response.status_code == 200
+    body = response.json()
+    assert Decimal(body["projected_spending"]) == Decimal("0")
+    assert body["months_used"] == 0
+    assert body["basis"] == []
+
+
+def test_forecast_requires_authentication(client: TestClient):
+    assert client.get("/api/analytics/forecast").status_code == 401
+
+
 def test_category_endpoint_defaults_to_this_month(
     client: TestClient, db: Session, authenticated_user
 ):

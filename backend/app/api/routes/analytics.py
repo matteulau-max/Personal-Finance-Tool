@@ -20,6 +20,7 @@ from app.schemas.analytics import (
     BudgetUpsertRequest,
     CategoryChangeResponse,
     CategoryTotalResponse,
+    ForecastResponse,
     LargestTransactionResponse,
     MerchantTotalResponse,
     NetWorthPointResponse,
@@ -234,6 +235,46 @@ def net_worth(
         )
         for p in analytics.net_worth_series(db, current_user, start=start, end=today)
     ]
+
+
+@router.get("/forecast", response_model=ForecastResponse)
+def forecast(
+    current_user: CurrentUser,
+    db: DbSession,
+    months: int = Query(default=3, ge=1, le=24),
+) -> ForecastResponse:
+    """Projected spending for next month, with the months it averaged.
+
+    The projection is a mean of complete months and deliberately not a model
+    -- see `analytics.forecast_next_month` for why a trend line would be more
+    authoritative without being more accurate. Returning `basis` alongside it
+    is the interface-level half of that decision: the figure arrives with its
+    own evidence, so a user can see it is an average of three ordinary months
+    rather than a prediction they are being asked to trust.
+    """
+    projection, months_used = analytics.forecast_next_month(
+        db, current_user, months=months
+    )
+
+    today = dt.date.today()
+    # The same window the projection averaged: complete months only, ending
+    # with the one before this one. Recomputing it here rather than having
+    # forecast_next_month return it keeps that function's contract narrow.
+    end = analytics._start_of_month(today) - dt.timedelta(days=1)
+    start = analytics._start_of_month(analytics._add_months(end, -(months - 1)))
+    basis = analytics.monthly_summary(db, current_user, start=start, end=end)
+
+    since = today - dt.timedelta(days=365)
+    charges = analytics.recurring_charges(db, current_user, since=since)
+    committed = sum((c.typical_amount for c in charges), ZERO)
+
+    return ForecastResponse(
+        projected_spending=projection,
+        months_used=months_used,
+        basis=[_period(summary) for summary in basis],
+        recurring_committed=committed,
+        recurring=[RecurringChargeResponse(**vars(c)) for c in charges],
+    )
 
 
 @router.get("/recurring", response_model=list[RecurringChargeResponse])

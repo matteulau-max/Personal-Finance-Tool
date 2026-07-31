@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { MainNav } from "@/components/main-nav";
+
 import { TransactionRow } from "@/components/transaction-row";
 import { getCategories, getTags, getTransactions } from "@/lib/api";
 import { clerkEnabled } from "@/lib/clerk";
@@ -67,11 +69,9 @@ export default async function TransactionsPage({
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col gap-6 px-6 py-12">
-      <header className="flex items-center justify-between gap-4">
+      <header className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-2xl font-semibold tracking-tight">Transactions</h1>
-        <Link href="/dashboard" className="text-sm underline">
-          Dashboard
-        </Link>
+        <MainNav current="/transactions" />
       </header>
 
       {/*

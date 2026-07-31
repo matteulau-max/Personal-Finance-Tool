@@ -1,11 +1,10 @@
-import Link from "next/link";
-
 import { BreakdownChart } from "@/components/charts/breakdown-chart";
 import { BudgetMeters } from "@/components/charts/budget-meters";
 import { CashFlowChart } from "@/components/charts/cash-flow-chart";
 import { NetWorthChart } from "@/components/charts/net-worth-chart";
 import { HeroFigure, StatTile } from "@/components/charts/stat-tile";
 import { AskPanel } from "@/components/ask-panel";
+import { MainNav } from "@/components/main-nav";
 import { getInsightSuggestions, getOverview } from "@/lib/api";
 import { clerkEnabled } from "@/lib/clerk";
 import { requireSignedIn } from "@/lib/require-signed-in";
@@ -73,14 +72,7 @@ export default async function InsightsPage() {
             As of {new Date(data.as_of + "T00:00:00").toLocaleDateString()}
           </p>
         </div>
-        <nav className="flex gap-4 text-sm">
-          <Link href="/dashboard" className="underline">
-            Dashboard
-          </Link>
-          <Link href="/transactions" className="underline">
-            Transactions
-          </Link>
-        </nav>
+        <MainNav current="/insights" />
       </header>
 
       <AskPanel

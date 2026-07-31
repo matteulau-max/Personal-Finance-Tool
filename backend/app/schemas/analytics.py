@@ -62,6 +62,28 @@ class RecurringChargeResponse(BaseModel):
     last_seen: dt.date
 
 
+class ForecastResponse(BaseModel):
+    """Projected spending, shown with the evidence it rests on.
+
+    `basis` and `months_used` are part of the response rather than a detail
+    the caller could look up separately, because the projection is a mean of
+    those months and nothing more. A single number presented alone invites
+    being read as a model output; returning the months it averaged lets the
+    UI show its work, and lets a user check the arithmetic against the
+    cash-flow figures on the next page.
+
+    `recurring_committed` is the portion of the projection already spoken for
+    by detected subscriptions. It is the difference between "you will probably
+    spend this" and "you will spend this unless you cancel something".
+    """
+
+    projected_spending: Decimal
+    months_used: int
+    basis: list[PeriodSummaryResponse]
+    recurring_committed: Decimal
+    recurring: list[RecurringChargeResponse]
+
+
 class LargestTransactionResponse(BaseModel):
     id: uuid.UUID
     date: dt.date

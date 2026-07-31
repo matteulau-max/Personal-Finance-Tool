@@ -415,6 +415,35 @@ export function getOverview(months = 12): Promise<Result<Overview>> {
   return authedJson<Overview>(`/api/analytics/overview?months=${months}`);
 }
 
+export type Forecast = {
+  projected_spending: string;
+  months_used: number;
+  basis: MonthlyPoint[];
+  recurring_committed: string;
+  recurring: RecurringCharge[];
+};
+
+/**
+ * Next month's projected spending, together with the months it averaged.
+ *
+ * `basis` is fetched alongside the figure rather than separately because the
+ * projection IS those months' mean -- showing one without the other invites
+ * reading an average as a prediction.
+ */
+export function getForecast(months = 3): Promise<Result<Forecast>> {
+  return authedJson<Forecast>(`/api/analytics/forecast?months=${months}`);
+}
+
+/**
+ * Month-by-month totals, without the rest of the overview payload.
+ *
+ * The cash-flow page needs a longer window than the dashboard and none of the
+ * top-merchant, budget or net-worth data that `getOverview` also computes.
+ */
+export function getMonthly(months = 12): Promise<Result<MonthlyPoint[]>> {
+  return authedJson<MonthlyPoint[]>(`/api/analytics/monthly?months=${months}`);
+}
+
 export type Suggestion = { question: string };
 
 /**
